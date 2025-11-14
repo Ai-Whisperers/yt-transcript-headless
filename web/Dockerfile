@@ -1,5 +1,28 @@
 # Multi-stage build for optimized production image
 
+# Stage 0: Development
+FROM node:18-alpine AS development
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev)
+RUN npm install
+
+# Copy source files (can be overridden by volumes)
+COPY . .
+
+# Environment variables
+ENV NODE_ENV=development
+
+# Expose Vite dev server port
+EXPOSE 5173
+
+# Start development server with hot reload
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
 # Stage 1: Builder
 FROM node:18-alpine AS builder
 

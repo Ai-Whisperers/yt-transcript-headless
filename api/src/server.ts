@@ -3,6 +3,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yamljs';
+import path from 'path';
 import { createRouter } from './infrastructure/routes';
 import { Logger } from './infrastructure/Logger';
 
@@ -47,6 +50,18 @@ app.use((req, res, next) => {
   next();
 });
 
+// Load Swagger documentation
+const swaggerDocument = YAML.load(path.join(__dirname, 'infrastructure', 'swagger.yaml'));
+
+// Swagger UI setup with custom options
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'YouTube Transcript API Documentation',
+  swaggerOptions: {
+    persistAuthorization: true,
+  }
+}));
+
 // API routes
 app.use('/api', createRouter());
 
@@ -55,6 +70,7 @@ app.get('/', (req, res) => {
   res.json({
     name: 'YouTube Transcript Extraction API',
     version: '1.0.0',
+    documentation: 'GET /api-docs',
     endpoints: {
       health: 'GET /api/health',
       transcribe: 'POST /api/transcribe',

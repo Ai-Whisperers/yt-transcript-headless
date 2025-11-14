@@ -1,5 +1,39 @@
 # Multi-stage build for optimized production image
 
+# Stage 0: Development
+FROM mcr.microsoft.com/playwright:v1.40.0-focal AS development
+
+# Install Node.js 18
+RUN apt-get update && \
+    apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev)
+RUN npm install && \
+    npx playwright install chromium && \
+    npx playwright install-deps chromium
+
+# Copy source files (can be overridden by volumes)
+COPY . .
+
+# Environment variables
+ENV NODE_ENV=development \
+    PORT=3000
+
+# Expose port
+EXPOSE 3000
+
+# Start development server with hot reload
+CMD ["npm", "run", "dev"]
+
 # Stage 1: Builder
 FROM node:18-slim AS builder
 

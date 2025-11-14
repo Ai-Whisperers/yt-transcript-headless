@@ -1,0 +1,241 @@
+openapi: 3.0.3
+info:
+  title: YouTube Transcript Extraction API
+  description: |
+    Headless YouTube transcript extraction microservice using Playwright-based scraping.
+
+    **Features:**
+    - Custom Playwright implementation (no third-party YouTube libraries)
+    - Stealth mode to avoid detection
+    - Multiple output formats (JSON, SRT, Plain Text)
+    - Rate limiting and security headers
+
+    **Note:** This API uses custom web scraping and does not rely on prohibited libraries like
+    youtube-transcript-api, yt-dlp, pytube, or similar third-party YouTube transcript extractors.
+  version: 1.0.0
+  contact:
+    name: AI Whisperers
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: http://localhost:3000/api
+    description: API base path
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Transcript
+    description: Transcript extraction operations
+  - name: Configuration
+    description: API configuration endpoints
+
+paths:
+  /api/health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns the health status of the API service
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: '2025-11-14T20:00:00.000Z'
+                  service:
+                    type: string
+                    example: yt-transcript-api
+
+  /api/transcribe:
+    post:
+      tags:
+        - Transcript
+      summary: Extract YouTube video transcript
+      description: |
+        Extracts transcript from a YouTube video using headless browser automation.
+
+        **Process:**
+        1. Launches Chromium with stealth techniques
+        2. Navigates to the YouTube video page
+        3. Clicks the transcript button
+        4. Extracts all transcript segments with timestamps
+        5. Returns data in requested format
+
+        **Rate Limits:**
+        - 100 requests per 15 minutes per IP
+      operationId: extractTranscript
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: YouTube video URL
+                  example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+                format:
+                  type: string
+                  enum: [json, srt, text]
+                  default: json
+                  description: Output format for the transcript
+      responses:
+        '200':
+          description: Transcript extracted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      transcript:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            time:
+                              type: string
+                              description: Timestamp in MM:SS format
+                              example: '0:18'
+                            text:
+                              type: string
+                              description: Transcript text at this timestamp
+                              example: "We're no strangers to love"
+                      format:
+                        type: string
+                        enum: [json, srt, text]
+                        example: json
+                      videoUrl:
+                        type: string
+                        format: uri
+                        example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+                      extractedAt:
+                        type: string
+                        format: date-time
+                        example: '2025-11-14T20:53:45.436Z'
+                      srt:
+                        type: string
+                        description: SRT formatted transcript (only when format=srt)
+                        nullable: true
+                      text:
+                        type: string
+                        description: Plain text transcript (only when format=text)
+                        nullable: true
+        '400':
+          description: Bad request (invalid URL or format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingUrl:
+                  summary: Missing URL
+                  value:
+                    success: false
+                    error:
+                      message: URL is required
+                      code: MISSING_URL
+                invalidFormat:
+                  summary: Invalid format
+                  value:
+                    success: false
+                    error:
+                      message: 'Invalid format. Must be one of: json, srt, text'
+                      code: INVALID_FORMAT
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Too many requests from this IP, please try again later.
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/formats:
+    get:
+      tags:
+        - Configuration
+      summary: Get supported formats
+      description: Returns list of supported transcript output formats
+      operationId: getSupportedFormats
+      responses:
+        '200':
+          description: List of supported formats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  formats:
+                    type: array
+                    items:
+                      type: string
+                      enum: [json, srt, text]
+                    example: ['json', 'srt', 'text']
+                  default:
+                    type: string
+                    example: json
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              description: Human-readable error message
+              example: Failed to extract transcript after 3 attempts
+            code:
+              type: string
+              description: Machine-readable error code
+              example: EXTRACTION_FAILED
+            details:
+              type: object
+              description: Additional error details
+              nullable: true
+
+  securitySchemes: {}
+
+security: []
