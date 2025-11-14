@@ -70,26 +70,44 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
 // API routes
 app.use('/api', createRouter());
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    name: 'YouTube Transcript Extraction API',
-    version: '1.0.0',
-    documentation: 'GET /api-docs',
-    endpoints: {
-      health: 'GET /api/health',
-      transcribe: 'POST /api/transcribe',
-      formats: 'GET /api/formats'
-    }
-  });
-});
+// Serve static frontend files in production
+if (process.env.NODE_ENV === 'production') {
+  const publicPath = path.join(__dirname, '..', 'public');
 
-// 404 handler
-app.use((req, res) => {
+  // Serve static files
+  app.use(express.static(publicPath));
+
+  // SPA fallback - serve index.html for all non-API routes
+  app.get('*', (req, res, next) => {
+    // Don't serve index.html for API routes or API docs
+    if (req.path.startsWith('/api') || req.path.startsWith('/api-docs')) {
+      return next();
+    }
+
+    res.sendFile(path.join(publicPath, 'index.html'));
+  });
+} else {
+  // Root endpoint for development
+  app.get('/', (req, res) => {
+    res.json({
+      name: 'YouTube Transcript Extraction API',
+      version: '1.0.0',
+      documentation: 'GET /api-docs',
+      endpoints: {
+        health: 'GET /api/health',
+        transcribe: 'POST /api/transcribe',
+        formats: 'GET /api/formats'
+      }
+    });
+  });
+}
+
+// 404 handler for API routes only (frontend routes handled by SPA fallback)
+app.use('/api', (req, res) => {
   res.status(404).json({
     success: false,
     error: {
-      message: 'Endpoint not found',
+      message: 'API endpoint not found',
       code: 'NOT_FOUND'
     }
   });

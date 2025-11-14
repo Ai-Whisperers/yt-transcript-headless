@@ -1,0 +1,67 @@
+# Dependencies
+node_modules
+**/node_modules
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist
+build
+.next
+out
+**/dist
+**/build
+
+# Development files
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.git
+.gitignore
+.vscode
+.idea
+.editorconfig
+
+# Testing
+coverage
+.nyc_output
+*.test.ts
+*.spec.ts
+*.test.js
+*.spec.js
+tests
+**/tests
+__tests__
+**/__tests__
+
+# Local development
+local-dev
+*.dev.yml
+
+# Documentation
+README.md
+CONTRIBUTING.md
+LICENSE
+*.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Docker
+Dockerfile.dev
+docker-compose.dev.yml
+.dockerignore
+
+# Temporary files
+tmp
+temp
+*.tmp
+*.swp
+*.swo
+*~
