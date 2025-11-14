@@ -19,7 +19,12 @@ const logger = new Logger('server');
 const app = express();
 
 // Security middleware
-app.use(helmet());
+// Configure helmet based on environment
+const isDevelopment = process.env.NODE_ENV === 'development';
+app.use(helmet({
+  hsts: isDevelopment ? false : undefined, // Disable HTTPS redirect in development
+  contentSecurityPolicy: false // Disable CSP for Swagger UI to work
+}));
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
   methods: ['GET', 'POST'],
