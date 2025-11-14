@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: yt-transcript-api
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ENABLE_STEALTH=true
+      - RATE_LIMIT_WINDOW=60000
+      - RATE_LIMIT_MAX=10
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - yt-transcript-network
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: yt-transcript-web
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+    environment:
+      - VITE_API_URL=http://api:3000/api
+    restart: unless-stopped
+    networks:
+      - yt-transcript-network
+
+networks:
+  yt-transcript-network:
+    driver: bridge
