@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api, TranscriptFormat, TranscriptResponse, ErrorResponse, TranscriptSegment } from './services/api';
+import { api, TranscriptFormat, TranscriptResponse, TranscriptSegment } from './services/api';
 
 function App() {
   const [url, setUrl] = useState('');
