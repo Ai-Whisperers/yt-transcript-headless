@@ -21,7 +21,7 @@ export class TranscribeVideoUseCase {
     this.logger = logger;
   }
 
-  async execute(request: TranscriptRequest): Promise<TranscriptResponse> {
+  async execute(request: TranscriptRequest, abortSignal?: AbortSignal): Promise<TranscriptResponse> {
     const startTime = Date.now();
 
     // Validate YouTube URL
@@ -39,8 +39,8 @@ export class TranscribeVideoUseCase {
     });
 
     try {
-      // Extract transcript using Playwright
-      const transcript = await this.extractor.extract(request.url);
+      // Extract transcript using Playwright with abort signal
+      const transcript = await this.extractor.extract(request.url, abortSignal);
 
       if (!transcript || transcript.length === 0) {
         throw new TranscriptNotFoundError(request.url);

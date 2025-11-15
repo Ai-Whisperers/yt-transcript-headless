@@ -59,6 +59,17 @@ export function createRouter(): Router {
     const logger = req.logger || new Logger('transcribe');
     const startTime = Date.now();
 
+    // Create AbortController to handle client disconnects
+    const abortController = new AbortController();
+
+    // Kill browser if client disconnects early
+    req.on('close', () => {
+      logger.warn('Client disconnected - aborting extraction', {
+        correlationId: req.correlationId
+      });
+      abortController.abort();
+    });
+
     const { url, format } = req.body;
 
     // Validate required fields
@@ -82,15 +93,34 @@ export function createRouter(): Router {
       correlationId: req.correlationId
     });
 
-    const result = await transcribeUseCase.execute(request);
+    try {
+      const result = await transcribeUseCase.execute(request, abortController.signal);
 
-    const duration = Date.now() - startTime;
-    logger.metric('transcribe', duration, {
-      videoUrl: url,
-      correlationId: req.correlationId
-    });
+      // Check if request was aborted
+      if (abortController.signal.aborted) {
+        logger.info('Request aborted, not sending response', {
+          correlationId: req.correlationId
+        });
+        return;
+      }
 
-    res.json(result);
+      const duration = Date.now() - startTime;
+      logger.metric('transcribe', duration, {
+        videoUrl: url,
+        correlationId: req.correlationId
+      });
+
+      res.json(result);
+    } catch (error) {
+      // If aborted, don't send error response
+      if (abortController.signal.aborted) {
+        logger.info('Request aborted during error handling', {
+          correlationId: req.correlationId
+        });
+        return;
+      }
+      throw error;
+    }
   }));
 
   // Get supported formats
@@ -121,15 +151,13 @@ export function createRouter(): Router {
   //   await mcpHandler.handleMCPRequest(req, res, () => {});
   // }));
 
-  // Cleanup on shutdown
+  // Cleanup on shutdown (no longer needed with disposable browsers, but kept for compatibility)
   process.on('SIGTERM', async () => {
-    logger.info('SIGTERM received, closing browser...');
-    await browserManager.close();
+    logger.info('SIGTERM received - graceful shutdown initiated');
   });
 
   process.on('SIGINT', async () => {
-    logger.info('SIGINT received, closing browser...');
-    await browserManager.close();
+    logger.info('SIGINT received - graceful shutdown initiated');
   });
 
   return router;

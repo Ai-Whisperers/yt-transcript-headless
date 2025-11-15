@@ -2,69 +2,181 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import { Logger } from './Logger';
 
 export class BrowserManager {
-  private browser: Browser | null = null;
-  private logger: Logger | null = null;
+  private logger: Logger;
 
-  constructor(logger?: Logger) {
-    this.logger = logger || null;
+  constructor(logger: Logger) {
+    this.logger = logger;
   }
 
-  async launch(): Promise<Browser> {
-    if (this.browser && this.browser.isConnected()) {
-      this.logger?.info('Reusing existing browser instance');
-      return this.browser;
+  /**
+   * Run a callback inside an isolated, disposable browser instance.
+   * The browser always dies after the callback (success OR failure).
+   *
+   * @param work - Async callback that receives page, context, and browser
+   * @param abortSignal - Optional signal to abort and kill browser on client disconnect
+   * @returns Result of the work callback
+   */
+  async runIsolated<T>(
+    work: (page: Page, context: BrowserContext, browser: Browser) => Promise<T>,
+    abortSignal?: AbortSignal
+  ): Promise<T> {
+    let browser: Browser | null = null;
+    let context: BrowserContext | null = null;
+    let page: Page | null = null;
+
+    const cleanup = async () => {
+      this.logger.info('Starting browser cleanup');
+      try {
+        if (page) {
+          await page.close().catch((err) => {
+            this.logger.warn('Failed to close page', err);
+          });
+        }
+        if (context) {
+          await context.close().catch((err) => {
+            this.logger.warn('Failed to close context', err);
+          });
+        }
+      } finally {
+        if (browser) {
+          await browser.close().catch((err) => {
+            this.logger.error('Failed to close browser', err);
+          });
+        }
+        this.logger.info('Browser cleanup completed');
+      }
+    };
+
+    // Kill browser if request aborted (client disconnected)
+    const abortHandler = () => {
+      this.logger.warn('Request aborted by client - killing browser');
+      cleanup().catch((err) => {
+        this.logger.error('Cleanup failed after abort', err);
+      });
+    };
+
+    if (abortSignal) {
+      abortSignal.addEventListener('abort', abortHandler);
     }
 
-    // Reset browser if it was closed/disconnected
-    if (this.browser) {
-      this.logger?.warn('Browser was disconnected, relaunching...');
-      this.browser = null;
+    try {
+      // Launch fresh browser instance
+      this.logger.info('Launching fresh browser instance');
+      browser = await chromium.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-infobars',
+          '--window-size=1920,1080',
+          '--start-maximized',
+          '--disable-web-security',
+          '--allow-running-insecure-content',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process'
+        ],
+      });
+
+      // Create context with retry wrapper
+      context = await this.createContextWithRetry(browser, 3);
+
+      // Create page
+      page = await context.newPage();
+
+      // Attach crash listeners
+      page.on('crash', () => {
+        this.logger.error('Page crashed during extraction');
+      });
+
+      page.on('close', () => {
+        this.logger.warn('Page closed unexpectedly');
+      });
+
+      context.on('close', () => {
+        this.logger.warn('Context closed unexpectedly');
+      });
+
+      // Apply resource blocking
+      await page.route('**/*.{png,jpg,jpeg,webp,svg,gif,ico,woff,woff2,ttf,eot}', route => route.abort());
+      await page.route('**/{ads,analytics,tracking}/**', route => route.abort());
+
+      // Execute the work callback
+      this.logger.info('Executing work callback in isolated browser');
+      return await work(page, context, browser);
+
+    } catch (err: any) {
+      this.logger.error('BrowserManager.runIsolated error', err);
+      throw err;
+    } finally {
+      // Always cleanup, regardless of success or failure
+      if (abortSignal) {
+        abortSignal.removeEventListener('abort', abortHandler);
+      }
+      await cleanup();
     }
-
-    this.logger?.info('Launching new browser instance');
-    this.browser = await chromium.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-infobars',
-        '--window-size=1920,1080',
-        '--start-maximized',
-        '--disable-web-security',
-        '--allow-running-insecure-content',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process'
-      ],
-    });
-
-    return this.browser;
   }
 
-  async createContext(): Promise<BrowserContext> {
-    const browser = await this.launch();
+  /**
+   * Create browser context with retry logic for stability
+   * Handles intermittent "Target closed" errors during context creation
+   */
+  private async createContextWithRetry(browser: Browser, maxRetries: number): Promise<BrowserContext> {
+    let attempt = 0;
+    let lastError: Error | null = null;
 
-    const context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-      locale: 'en-US',
-      timezoneId: 'America/New_York',
-      permissions: ['geolocation'],
-      geolocation: { latitude: 40.7128, longitude: -74.0060 },
-      extraHTTPHeaders: {
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      },
-    });
+    while (attempt < maxRetries) {
+      attempt++;
+      try {
+        this.logger.info(`Creating browser context (attempt ${attempt}/${maxRetries})`);
 
-    // Apply stealth techniques
+        const context = await browser.newContext({
+          viewport: { width: 1920, height: 1080 },
+          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+          locale: 'en-US',
+          timezoneId: 'America/New_York',
+          permissions: ['geolocation'],
+          geolocation: { latitude: 40.7128, longitude: -74.0060 },
+          extraHTTPHeaders: {
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+          },
+        });
+
+        // Apply stealth techniques
+        await this.applyStealth(context);
+
+        this.logger.info('Browser context created successfully');
+        return context;
+
+      } catch (error: any) {
+        lastError = error;
+        this.logger.warn(`Context creation attempt ${attempt} failed: ${error.message}`);
+
+        if (attempt < maxRetries) {
+          const delay = 1000 * attempt; // Progressive delay
+          this.logger.info(`Retrying context creation in ${delay}ms`);
+          await this.wait(delay);
+        }
+      }
+    }
+
+    throw new Error(
+      `Failed to create browser context after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`
+    );
+  }
+
+  /**
+   * Apply stealth techniques to avoid detection
+   */
+  private async applyStealth(context: BrowserContext): Promise<void> {
     await context.addInitScript(() => {
       // Remove webdriver flag
       Object.defineProperty(navigator, 'webdriver', {
@@ -131,25 +243,6 @@ export class BrowserManager {
         configurable: false
       });
     });
-
-    return context;
-  }
-
-  async createPage(context: BrowserContext): Promise<Page> {
-    const page = await context.newPage();
-
-    // Block unnecessary resources for faster loading
-    await page.route('**/*.{png,jpg,jpeg,webp,svg,gif,ico,woff,woff2,ttf,eot}', route => route.abort());
-    await page.route('**/{ads,analytics,tracking}/**', route => route.abort());
-
-    return page;
-  }
-
-  async close(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-    }
   }
 
   /**
@@ -179,5 +272,12 @@ export class BrowserManager {
         }, 300 + Math.random() * 400);
       });
     });
+  }
+
+  /**
+   * Wait helper for delays
+   */
+  private wait(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

@@ -14,7 +14,7 @@ export class TranscriptExtractor {
     this.logger = logger;
   }
 
-  async extract(videoUrl: string): Promise<TranscriptSegment[]> {
+  async extract(videoUrl: string, abortSignal?: AbortSignal): Promise<TranscriptSegment[]> {
     let attempt = 0;
     let lastError: Error | null = null;
 
@@ -23,7 +23,7 @@ export class TranscriptExtractor {
       this.logger.info(`Extraction attempt ${attempt}/${this.maxRetries}`);
 
       try {
-        const transcript = await this.attemptExtraction(videoUrl);
+        const transcript = await this.attemptExtraction(videoUrl, abortSignal);
         if (transcript && transcript.length > 0) {
           return transcript;
         }
@@ -44,11 +44,9 @@ export class TranscriptExtractor {
     );
   }
 
-  private async attemptExtraction(videoUrl: string): Promise<TranscriptSegment[]> {
-    const context = await this.browserManager.createContext();
-    const page = await this.browserManager.createPage(context);
-
-    try {
+  private async attemptExtraction(videoUrl: string, abortSignal?: AbortSignal): Promise<TranscriptSegment[]> {
+    // Use disposable browser instance via runIsolated
+    return await this.browserManager.runIsolated(async (page) => {
       // Navigate to video
       this.logger.info(`Navigating to: ${videoUrl}`);
       await page.goto(videoUrl, {
@@ -56,8 +54,22 @@ export class TranscriptExtractor {
         timeout: this.timeout
       });
 
+      // Wait for page to be fully loaded (YouTube rate limiting protection)
+      await page.waitForLoadState('domcontentloaded', { timeout: this.timeout });
+
       // Wait for page to be interactive
       await this.wait(BrowserManager.randomDelay(2000, 3000));
+
+      // Attach page error listeners for debugging
+      page.on('pageerror', (error) => {
+        this.logger.error('Page JavaScript error', error);
+      });
+
+      page.on('console', (msg) => {
+        if (msg.type() === 'error' || msg.type() === 'warning') {
+          this.logger.warn(`Page console [${msg.type()}]: ${msg.text()}`);
+        }
+      });
 
       // Try to expand description
       await this.expandDescription(page);
@@ -71,9 +83,7 @@ export class TranscriptExtractor {
       this.logger.info(`Successfully extracted ${transcript.length} segments`);
       return transcript;
 
-    } finally {
-      await context.close();
-    }
+    }, abortSignal);
   }
 
   private async expandDescription(page: Page): Promise<void> {
