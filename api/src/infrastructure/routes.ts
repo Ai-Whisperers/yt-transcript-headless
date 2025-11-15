@@ -1,9 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { TranscribeVideoUseCase } from '../application/TranscribeVideoUseCase';
+import { TranscribePlaylistUseCase } from '../application/TranscribePlaylistUseCase';
 import { TranscriptExtractor } from './TranscriptExtractor';
+import { PlaylistExtractor } from './PlaylistExtractor';
 import { BrowserManager } from './BrowserManager';
 import { Logger } from './Logger';
 import { TranscriptRequest, TranscriptFormat } from '../domain/TranscriptSegment';
+import { PlaylistRequest } from '../domain/PlaylistTypes';
 import { asyncHandler, metricsCollector } from './middleware';
 import {
   MissingFieldError,
@@ -17,11 +20,18 @@ export function createRouter(): Router {
   const logger = new Logger('api-routes');
   const browserLogger = new Logger('browser-manager');
   const queueLogger = new Logger('request-queue');
+  const playlistLogger = new Logger('playlist-extractor');
 
   // Initialize shared components
   const browserManager = new BrowserManager(browserLogger);
   const extractor = new TranscriptExtractor(browserManager, logger);
+  const playlistExtractor = new PlaylistExtractor(browserManager, playlistLogger);
   const transcribeUseCase = new TranscribeVideoUseCase(extractor, logger);
+  const transcribePlaylistUseCase = new TranscribePlaylistUseCase(
+    playlistExtractor,
+    transcribeUseCase,
+    playlistLogger
+  );
   const mcpHandler = new ExpressMCPHandler();
 
   // Initialize request queue (3 concurrent, max 100 queued, 60s timeout)
@@ -180,6 +190,110 @@ export function createRouter(): Router {
         correlationId: req.correlationId
       }
     });
+  }));
+
+  // Playlist transcribe endpoint
+  router.post('/transcribe/playlist', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('transcribe-playlist');
+    const startTime = Date.now();
+
+    // Validate required fields before queueing
+    const { url, format, maxVideos } = req.body;
+
+    if (!url) {
+      throw new MissingFieldError('url');
+    }
+
+    if (format && !Object.values(TranscriptFormat).includes(format)) {
+      throw new InvalidFormatError(format, Object.values(TranscriptFormat));
+    }
+
+    const request: PlaylistRequest = {
+      url,
+      format: format as TranscriptFormat,
+      maxVideos: maxVideos || 100
+    };
+
+    logger.info('Queueing playlist transcription', {
+      playlistUrl: url,
+      format: format || 'default',
+      maxVideos: request.maxVideos,
+      correlationId: req.correlationId,
+      queueStats: requestQueue.getStats()
+    });
+
+    try {
+      // Queue the playlist extraction task
+      const result = await requestQueue.add(async () => {
+        // Create AbortController to handle client disconnects
+        const abortController = new AbortController();
+
+        // Kill browser if client disconnects early
+        req.on('close', () => {
+          logger.warn('Client disconnected - aborting playlist extraction', {
+            correlationId: req.correlationId
+          });
+          abortController.abort();
+        });
+
+        logger.info('Starting playlist transcription from queue', {
+          playlistUrl: url,
+          correlationId: req.correlationId
+        });
+
+        const playlistResult = await transcribePlaylistUseCase.execute(request, abortController.signal);
+
+        // Check if request was aborted
+        if (abortController.signal.aborted) {
+          logger.info('Playlist request aborted during extraction', {
+            correlationId: req.correlationId
+          });
+          throw new Error('Request aborted');
+        }
+
+        return playlistResult;
+      });
+
+      const duration = Date.now() - startTime;
+      logger.metric('transcribe-playlist', duration, {
+        playlistUrl: url,
+        correlationId: req.correlationId,
+        processedVideos: result.data?.processedVideos || 0
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      // Handle queue-specific errors
+      if (error.message === 'Queue is full. Please try again later.') {
+        res.status(503).json({
+          success: false,
+          error: {
+            message: 'Service is currently at capacity. Please try again later.',
+            code: 'QUEUE_FULL',
+            details: {
+              queueStats: requestQueue.getStats()
+            }
+          }
+        });
+        return;
+      }
+
+      if (error.message === 'Request timed out in queue') {
+        res.status(504).json({
+          success: false,
+          error: {
+            message: 'Request timed out waiting in queue',
+            code: 'QUEUE_TIMEOUT',
+            details: {
+              queueStats: requestQueue.getStats()
+            }
+          }
+        });
+        return;
+      }
+
+      throw error;
+    }
   }));
 
   // MCP endpoint temporarily disabled - needs MCP handler fixes
