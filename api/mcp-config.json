@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "youtube-transcript-extractor": {
+      "command": "node",
+      "args": [
+        "dist/mcp/mcp-server.js"
+      ],
+      "cwd": "C:\\Users\\Gestalt\\Desktop\\AI WHISPERERS\\yt-transcript-headless\\simple-yt-transcript-extractor\\api",
+      "env": {
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}
