@@ -1,13 +1,27 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { Logger } from './Logger';
 
 export class BrowserManager {
   private browser: Browser | null = null;
+  private logger: Logger | null = null;
+
+  constructor(logger?: Logger) {
+    this.logger = logger || null;
+  }
 
   async launch(): Promise<Browser> {
-    if (this.browser) {
+    if (this.browser && this.browser.isConnected()) {
+      this.logger?.info('Reusing existing browser instance');
       return this.browser;
     }
 
+    // Reset browser if it was closed/disconnected
+    if (this.browser) {
+      this.logger?.warn('Browser was disconnected, relaunching...');
+      this.browser = null;
+    }
+
+    this.logger?.info('Launching new browser instance');
     this.browser = await chromium.launch({
       headless: true,
       args: [

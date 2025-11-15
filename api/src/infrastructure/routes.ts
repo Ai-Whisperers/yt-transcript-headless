@@ -8,7 +8,8 @@ import { TranscriptRequest, TranscriptFormat } from '../domain/TranscriptSegment
 export function createRouter(): Router {
   const router = Router();
   const logger = new Logger('api-routes');
-  const browserManager = new BrowserManager();
+  const browserLogger = new Logger('browser-manager');
+  const browserManager = new BrowserManager(browserLogger);
   const extractor = new TranscriptExtractor(browserManager, logger);
   const transcribeUseCase = new TranscribeVideoUseCase(extractor, logger);
 
