@@ -26,11 +26,13 @@ servers:
 
 tags:
   - name: Health
-    description: Health check endpoints
+    description: Health check and monitoring endpoints
   - name: Transcript
     description: Transcript extraction operations
   - name: Configuration
     description: API configuration endpoints
+  - name: Observability
+    description: Metrics and observability endpoints
 
 paths:
   /api/health:
@@ -38,11 +40,24 @@ paths:
       tags:
         - Health
       summary: Health check
-      description: Returns the health status of the API service
+      description: Returns the health status of the API service with system metrics
       operationId: healthCheck
+      parameters:
+        - in: header
+          name: X-Correlation-ID
+          schema:
+            type: string
+            format: uuid
+          description: Optional correlation ID for request tracing
       responses:
         '200':
           description: Service is healthy
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Correlation ID for request tracing
           content:
             application/json:
               schema:
@@ -58,6 +73,30 @@ paths:
                   service:
                     type: string
                     example: yt-transcript-api
+                  uptime:
+                    type: number
+                    description: Server uptime in seconds
+                    example: 3600.5
+                  memory:
+                    type: object
+                    description: Memory usage statistics
+                    properties:
+                      rss:
+                        type: number
+                        description: Resident Set Size
+                      heapTotal:
+                        type: number
+                        description: Total heap size
+                      heapUsed:
+                        type: number
+                        description: Used heap size
+                      external:
+                        type: number
+                        description: External memory usage
+                  correlationId:
+                    type: string
+                    format: uuid
+                    description: Request correlation ID
 
   /api/transcribe:
     post:
@@ -76,7 +115,18 @@ paths:
 
         **Rate Limits:**
         - 100 requests per 15 minutes per IP
+
+        **Observability:**
+        - All requests include correlation IDs for distributed tracing
+        - Performance metrics captured automatically
       operationId: extractTranscript
+      parameters:
+        - in: header
+          name: X-Correlation-ID
+          schema:
+            type: string
+            format: uuid
+          description: Optional correlation ID for request tracing (auto-generated if not provided)
       requestBody:
         required: true
         content:
@@ -99,6 +149,12 @@ paths:
       responses:
         '200':
           description: Transcript extracted successfully
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Correlation ID for request tracing
           content:
             application/json:
               schema:
@@ -144,48 +200,93 @@ paths:
                         description: Plain text transcript (only when format=text)
                         nullable: true
         '400':
-          description: Bad request (invalid URL or format)
+          description: Bad request (validation errors)
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 missingUrl:
-                  summary: Missing URL
+                  summary: Missing required field
                   value:
                     success: false
                     error:
-                      message: URL is required
-                      code: MISSING_URL
+                      message: 'Missing required field: url'
+                      code: MISSING_FIELD
+                      timestamp: '2025-11-15T10:30:00.000Z'
+                      correlationId: 550e8400-e29b-41d4-a716-446655440000
+                      context:
+                        field: url
+                invalidUrl:
+                  $ref: '#/components/examples/InvalidUrlError'
                 invalidFormat:
-                  summary: Invalid format
+                  summary: Invalid output format
                   value:
                     success: false
                     error:
-                      message: 'Invalid format. Must be one of: json, srt, text'
+                      message: 'Invalid format: xml'
                       code: INVALID_FORMAT
-        '429':
-          description: Rate limit exceeded
-          content:
-            application/json:
+                      timestamp: '2025-11-15T10:30:00.000Z'
+                      correlationId: 550e8400-e29b-41d4-a716-446655440000
+                      context:
+                        providedFormat: xml
+                        validFormats: [json, srt, text]
+        '404':
+          description: Transcript not found
+          headers:
+            X-Correlation-ID:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: false
-                  error:
-                    type: object
-                    properties:
-                      message:
-                        type: string
-                        example: Too many requests from this IP, please try again later.
-        '500':
-          description: Internal server error
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                noTranscript:
+                  $ref: '#/components/examples/NoTranscriptError'
+        '429':
+          description: Rate limit exceeded
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                rateLimit:
+                  $ref: '#/components/examples/RateLimitError'
+        '500':
+          description: Internal server error or extraction failure
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                extractionFailed:
+                  $ref: '#/components/examples/ExtractionFailedError'
+                internalError:
+                  summary: Unexpected internal error
+                  value:
+                    success: false
+                    error:
+                      message: Internal server error
+                      code: INTERNAL_ERROR
+                      timestamp: '2025-11-15T10:30:00.000Z'
+                      correlationId: 550e8400-e29b-41d4-a716-446655440000
 
   /api/formats:
     get:
@@ -194,34 +295,147 @@ paths:
       summary: Get supported formats
       description: Returns list of supported transcript output formats
       operationId: getSupportedFormats
+      parameters:
+        - in: header
+          name: X-Correlation-ID
+          schema:
+            type: string
+            format: uuid
+          description: Optional correlation ID for request tracing
       responses:
         '200':
           description: List of supported formats
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  formats:
-                    type: array
-                    items:
-                      type: string
-                      enum: [json, srt, text]
-                    example: ['json', 'srt', 'text']
-                  default:
-                    type: string
-                    example: json
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      formats:
+                        type: array
+                        items:
+                          type: string
+                          enum: [json, srt, text]
+                        example: ['json', 'srt', 'text']
+                      default:
+                        type: string
+                        example: json
+                      correlationId:
+                        type: string
+                        format: uuid
+
+  /api/metrics:
+    get:
+      tags:
+        - Observability
+      summary: Get API metrics
+      description: |
+        Returns observability metrics including request counts, error rates, and latency statistics.
+
+        **Metrics Included:**
+        - Request counts by endpoint
+        - Error counts by error code
+        - Latency percentiles (p50, p95, p99)
+      operationId: getMetrics
+      parameters:
+        - in: header
+          name: X-Correlation-ID
+          schema:
+            type: string
+            format: uuid
+          description: Optional correlation ID for request tracing
+      responses:
+        '200':
+          description: Metrics data
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      requests:
+                        type: object
+                        description: Request counts by endpoint
+                        additionalProperties:
+                          type: number
+                        example:
+                          'POST /api/transcribe': 150
+                          'GET /api/health': 45
+                      errors:
+                        type: object
+                        description: Error counts by error code
+                        additionalProperties:
+                          type: number
+                        example:
+                          INVALID_URL: 5
+                          NO_TRANSCRIPT: 3
+                      latencies:
+                        type: object
+                        description: Latency statistics by operation
+                        additionalProperties:
+                          type: object
+                          properties:
+                            count:
+                              type: number
+                            min:
+                              type: number
+                            max:
+                              type: number
+                            avg:
+                              type: number
+                            p50:
+                              type: number
+                              description: 50th percentile (median)
+                            p95:
+                              type: number
+                              description: 95th percentile
+                            p99:
+                              type: number
+                              description: 99th percentile
+                      timestamp:
+                        type: string
+                        format: date-time
+                      correlationId:
+                        type: string
+                        format: uuid
 
 components:
   schemas:
     ErrorResponse:
       type: object
+      required:
+        - success
+        - error
       properties:
         success:
           type: boolean
           example: false
         error:
           type: object
+          required:
+            - message
+            - code
+            - timestamp
           properties:
             message:
               type: string
@@ -230,11 +444,89 @@ components:
             code:
               type: string
               description: Machine-readable error code
+              enum:
+                - VALIDATION_ERROR
+                - INVALID_URL
+                - MISSING_FIELD
+                - INVALID_FORMAT
+                - NO_TRANSCRIPT
+                - EXTRACTION_FAILED
+                - BROWSER_ERROR
+                - TIMEOUT
+                - RATE_LIMIT_EXCEEDED
+                - INTERNAL_ERROR
               example: EXTRACTION_FAILED
-            details:
+            timestamp:
+              type: string
+              format: date-time
+              description: Error occurrence timestamp
+              example: '2025-11-15T10:30:00.000Z'
+            correlationId:
+              type: string
+              format: uuid
+              description: Request correlation ID for tracing
+              example: 550e8400-e29b-41d4-a716-446655440000
+            context:
               type: object
-              description: Additional error details
+              description: Additional error context (error-specific fields)
               nullable: true
+              additionalProperties: true
+              example:
+                videoUrl: 'https://www.youtube.com/watch?v=invalid'
+                attempt: 3
+
+  examples:
+    InvalidUrlError:
+      value:
+        success: false
+        error:
+          message: Invalid YouTube URL format
+          code: INVALID_URL
+          timestamp: '2025-11-15T10:30:00.000Z'
+          correlationId: 550e8400-e29b-41d4-a716-446655440000
+          context:
+            providedUrl: 'https://invalid-url.com'
+            expectedFormats:
+              - 'youtube.com/watch?v=...'
+              - 'youtu.be/...'
+
+    NoTranscriptError:
+      value:
+        success: false
+        error:
+          message: No transcript available for this video
+          code: NO_TRANSCRIPT
+          timestamp: '2025-11-15T10:30:00.000Z'
+          correlationId: 550e8400-e29b-41d4-a716-446655440000
+          context:
+            videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+            possibleReasons:
+              - Video has no captions
+              - Video is private or unavailable
+              - Transcript feature disabled by uploader
+
+    ExtractionFailedError:
+      value:
+        success: false
+        error:
+          message: Failed to extract transcript after 3 attempts
+          code: EXTRACTION_FAILED
+          timestamp: '2025-11-15T10:30:00.000Z'
+          correlationId: 550e8400-e29b-41d4-a716-446655440000
+          context:
+            videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+            attempt: 3
+
+    RateLimitError:
+      value:
+        success: false
+        error:
+          message: Rate limit exceeded
+          code: RATE_LIMIT_EXCEEDED
+          timestamp: '2025-11-15T10:30:00.000Z'
+          correlationId: 550e8400-e29b-41d4-a716-446655440000
+          context:
+            retryAfter: 60
 
   securitySchemes: {}
 

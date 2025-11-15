@@ -1,12 +1,16 @@
 import {
   TranscriptRequest,
   TranscriptResponse,
-  ErrorResponse,
   TranscriptFormat,
   TranscriptSegment
 } from '../domain/TranscriptSegment';
 import { TranscriptExtractor } from '../infrastructure/TranscriptExtractor';
 import { Logger } from '../infrastructure/Logger';
+import {
+  InvalidUrlError,
+  TranscriptNotFoundError,
+  ExtractionFailedError
+} from '../domain/errors';
 
 export class TranscribeVideoUseCase {
   private extractor: TranscriptExtractor;
@@ -17,24 +21,29 @@ export class TranscribeVideoUseCase {
     this.logger = logger;
   }
 
-  async execute(request: TranscriptRequest): Promise<TranscriptResponse | ErrorResponse> {
+  async execute(request: TranscriptRequest): Promise<TranscriptResponse> {
+    const startTime = Date.now();
+
+    // Validate YouTube URL
+    if (!this.isValidYouTubeUrl(request.url)) {
+      throw new InvalidUrlError(request.url);
+    }
+
+    // Set default format if not provided
+    const format = request.format || TranscriptFormat.JSON;
+
+    // Log extraction attempt
+    this.logger.info('Starting transcript extraction', {
+      videoUrl: request.url,
+      format
+    });
+
     try {
-      // Validate YouTube URL
-      if (!this.isValidYouTubeUrl(request.url)) {
-        return this.createErrorResponse('Invalid YouTube URL', 'INVALID_URL');
-      }
-
-      // Set default format if not provided
-      const format = request.format || TranscriptFormat.JSON;
-
-      // Log extraction attempt
-      this.logger.info(`Starting transcript extraction for: ${request.url}`);
-
       // Extract transcript using Playwright
       const transcript = await this.extractor.extract(request.url);
 
       if (!transcript || transcript.length === 0) {
-        return this.createErrorResponse('No transcript found for this video', 'NO_TRANSCRIPT');
+        throw new TranscriptNotFoundError(request.url);
       }
 
       // Format the response based on requested format
@@ -55,15 +64,34 @@ export class TranscribeVideoUseCase {
         response.data.text = this.formatAsText(transcript);
       }
 
-      this.logger.info(`Successfully extracted ${transcript.length} segments`);
+      const duration = Date.now() - startTime;
+      this.logger.info('Successfully extracted transcript', {
+        videoUrl: request.url,
+        segmentCount: transcript.length,
+        duration
+      });
+
       return response;
 
     } catch (error: any) {
-      this.logger.error(`Extraction failed: ${error.message}`, error);
-      return this.createErrorResponse(
+      const duration = Date.now() - startTime;
+
+      // Re-throw known errors
+      if (error instanceof InvalidUrlError || error instanceof TranscriptNotFoundError) {
+        throw error;
+      }
+
+      // Wrap unknown errors
+      this.logger.error('Extraction failed', error, {
+        videoUrl: request.url,
+        duration
+      });
+
+      throw new ExtractionFailedError(
         error.message || 'Failed to extract transcript',
-        'EXTRACTION_FAILED',
-        error.stack
+        request.url,
+        undefined,
+        { originalError: error.name }
       );
     }
   }
@@ -76,17 +104,6 @@ export class TranscribeVideoUseCase {
     } catch {
       return false;
     }
-  }
-
-  private createErrorResponse(message: string, code: string, details?: any): ErrorResponse {
-    return {
-      success: false,
-      error: {
-        message,
-        code,
-        ...(details && { details })
-      }
-    };
   }
 
   private formatAsSRT(transcript: TranscriptSegment[]): string {

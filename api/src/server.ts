@@ -46,14 +46,20 @@ app.use('/api/transcribe', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request logging middleware
-app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.path}`, {
-    ip: req.ip,
-    userAgent: req.get('user-agent')
-  });
-  next();
-});
+// Observability middleware
+import {
+  correlationIdMiddleware,
+  requestContextMiddleware,
+  requestLoggingMiddleware,
+  metricsMiddleware,
+  errorHandler,
+  notFoundHandler
+} from './infrastructure/middleware';
+
+app.use(correlationIdMiddleware);
+app.use(requestContextMiddleware(logger));
+app.use(requestLoggingMiddleware);
+app.use(metricsMiddleware);
 
 // Load Swagger documentation
 const swaggerDocument = YAML.load(path.join(__dirname, 'infrastructure', 'swagger.yaml'));
@@ -103,27 +109,10 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // 404 handler for API routes only (frontend routes handled by SPA fallback)
-app.use('/api', (req, res) => {
-  res.status(404).json({
-    success: false,
-    error: {
-      message: 'API endpoint not found',
-      code: 'NOT_FOUND'
-    }
-  });
-});
+app.use('/api', notFoundHandler);
 
-// Error handling middleware
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  logger.error('Unhandled error', err);
-  res.status(500).json({
-    success: false,
-    error: {
-      message: 'Internal server error',
-      code: 'INTERNAL_ERROR'
-    }
-  });
-});
+// Centralized error handling middleware
+app.use(errorHandler(logger));
 
 // Start server
 const PORT = process.env.PORT || 3000;
