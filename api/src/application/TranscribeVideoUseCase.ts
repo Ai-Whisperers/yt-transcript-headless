@@ -100,10 +100,66 @@ export class TranscribeVideoUseCase {
     try {
       const parsedUrl = new URL(url);
       const validHosts = ['www.youtube.com', 'youtube.com', 'youtu.be', 'm.youtube.com'];
-      return validHosts.includes(parsedUrl.hostname);
-    } catch {
+
+      // Check if protocol is HTTP or HTTPS
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        this.logger.warn('Invalid protocol for YouTube URL', { url, protocol: parsedUrl.protocol });
+        return false;
+      }
+
+      // Check if hostname is valid
+      if (!validHosts.includes(parsedUrl.hostname)) {
+        this.logger.warn('Invalid YouTube hostname', { url, hostname: parsedUrl.hostname });
+        return false;
+      }
+
+      // Validate video ID presence and format
+      const videoId = this.extractVideoId(parsedUrl);
+      if (!videoId) {
+        this.logger.warn('No video ID found in URL', { url });
+        return false;
+      }
+
+      // Validate video ID format (YouTube IDs are 11 characters, alphanumeric + - and _)
+      const videoIdRegex = /^[a-zA-Z0-9_-]{11}$/;
+      if (!videoIdRegex.test(videoId)) {
+        this.logger.warn('Invalid video ID format', { url, videoId });
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      this.logger.warn('Failed to parse URL', { url, error });
       return false;
     }
+  }
+
+  private extractVideoId(parsedUrl: URL): string | null {
+    // Handle youtu.be short URLs (e.g., https://youtu.be/VIDEO_ID)
+    if (parsedUrl.hostname === 'youtu.be') {
+      const videoId = parsedUrl.pathname.slice(1).split('?')[0];
+      return videoId || null;
+    }
+
+    // Handle regular YouTube URLs (e.g., https://www.youtube.com/watch?v=VIDEO_ID)
+    const videoId = parsedUrl.searchParams.get('v');
+    if (videoId) {
+      return videoId;
+    }
+
+    // Handle embed URLs (e.g., https://www.youtube.com/embed/VIDEO_ID)
+    if (parsedUrl.pathname.startsWith('/embed/')) {
+      const videoId = parsedUrl.pathname.split('/embed/')[1]?.split('?')[0];
+      return videoId || null;
+    }
+
+    // Handle /v/ URLs (legacy format)
+    if (parsedUrl.pathname.startsWith('/v/')) {
+      const videoId = parsedUrl.pathname.split('/v/')[1]?.split('?')[0];
+      return videoId || null;
+    }
+
+    return null;
   }
 
   private formatAsSRT(transcript: TranscriptSegment[]): string {
