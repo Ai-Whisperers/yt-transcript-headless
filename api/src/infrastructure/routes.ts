@@ -10,15 +10,22 @@ import {
   InvalidFormatError
 } from '../domain/errors';
 import { ExpressMCPHandler } from '../mcp/express-mcp-handler';
+import { RequestQueue } from './RequestQueue';
 
 export function createRouter(): Router {
   const router = Router();
   const logger = new Logger('api-routes');
   const browserLogger = new Logger('browser-manager');
+  const queueLogger = new Logger('request-queue');
+
+  // Initialize shared components
   const browserManager = new BrowserManager(browserLogger);
   const extractor = new TranscriptExtractor(browserManager, logger);
   const transcribeUseCase = new TranscribeVideoUseCase(extractor, logger);
   const mcpHandler = new ExpressMCPHandler();
+
+  // Initialize request queue (3 concurrent, max 100 queued, 60s timeout)
+  const requestQueue = new RequestQueue(3, 100, 60000, queueLogger);
 
   // Health check endpoint with metrics
   router.get('/health', asyncHandler(async (req: Request, res: Response) => {
@@ -40,6 +47,10 @@ export function createRouter(): Router {
   // Metrics endpoint
   router.get('/metrics', asyncHandler(async (req: Request, res: Response) => {
     const logger = req.logger || new Logger('metrics');
+
+    // Update queue stats in metrics collector
+    metricsCollector.updateQueueStats(requestQueue.getStats());
+
     const metrics = metricsCollector.getMetrics();
 
     logger.info('Metrics requested', { correlationId: req.correlationId });
@@ -54,30 +65,18 @@ export function createRouter(): Router {
     });
   }));
 
-  // Main transcribe endpoint
+  // Main transcribe endpoint (with queue)
   router.post('/transcribe', asyncHandler(async (req: Request, res: Response) => {
     const logger = req.logger || new Logger('transcribe');
     const startTime = Date.now();
 
-    // Create AbortController to handle client disconnects
-    const abortController = new AbortController();
-
-    // Kill browser if client disconnects early
-    req.on('close', () => {
-      logger.warn('Client disconnected - aborting extraction', {
-        correlationId: req.correlationId
-      });
-      abortController.abort();
-    });
-
+    // Validate required fields before queueing
     const { url, format } = req.body;
 
-    // Validate required fields
     if (!url) {
       throw new MissingFieldError('url');
     }
 
-    // Validate format if provided
     if (format && !Object.values(TranscriptFormat).includes(format)) {
       throw new InvalidFormatError(format, Object.values(TranscriptFormat));
     }
@@ -87,22 +86,44 @@ export function createRouter(): Router {
       format: format as TranscriptFormat
     };
 
-    logger.info('Starting transcript extraction', {
+    logger.info('Queueing transcript extraction', {
       videoUrl: url,
       format: format || 'default',
-      correlationId: req.correlationId
+      correlationId: req.correlationId,
+      queueStats: requestQueue.getStats()
     });
 
     try {
-      const result = await transcribeUseCase.execute(request, abortController.signal);
+      // Queue the extraction task
+      const result = await requestQueue.add(async () => {
+        // Create AbortController to handle client disconnects
+        const abortController = new AbortController();
 
-      // Check if request was aborted
-      if (abortController.signal.aborted) {
-        logger.info('Request aborted, not sending response', {
+        // Kill browser if client disconnects early
+        req.on('close', () => {
+          logger.warn('Client disconnected - aborting extraction', {
+            correlationId: req.correlationId
+          });
+          abortController.abort();
+        });
+
+        logger.info('Starting transcript extraction from queue', {
+          videoUrl: url,
           correlationId: req.correlationId
         });
-        return;
-      }
+
+        const extractionResult = await transcribeUseCase.execute(request, abortController.signal);
+
+        // Check if request was aborted
+        if (abortController.signal.aborted) {
+          logger.info('Request aborted during extraction', {
+            correlationId: req.correlationId
+          });
+          throw new Error('Request aborted');
+        }
+
+        return extractionResult;
+      });
 
       const duration = Date.now() - startTime;
       logger.metric('transcribe', duration, {
@@ -111,14 +132,36 @@ export function createRouter(): Router {
       });
 
       res.json(result);
-    } catch (error) {
-      // If aborted, don't send error response
-      if (abortController.signal.aborted) {
-        logger.info('Request aborted during error handling', {
-          correlationId: req.correlationId
+    } catch (error: any) {
+      // Handle queue-specific errors
+      if (error.message === 'Queue is full. Please try again later.') {
+        res.status(503).json({
+          success: false,
+          error: {
+            message: 'Service is currently at capacity. Please try again later.',
+            code: 'QUEUE_FULL',
+            details: {
+              queueStats: requestQueue.getStats()
+            }
+          }
         });
         return;
       }
+
+      if (error.message === 'Request timed out in queue') {
+        res.status(504).json({
+          success: false,
+          error: {
+            message: 'Request timed out waiting in queue',
+            code: 'QUEUE_TIMEOUT',
+            details: {
+              queueStats: requestQueue.getStats()
+            }
+          }
+        });
+        return;
+      }
+
       throw error;
     }
   }));

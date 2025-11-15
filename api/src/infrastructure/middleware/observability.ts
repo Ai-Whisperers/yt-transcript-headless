@@ -86,6 +86,7 @@ export class MetricsCollector {
   private requestCounts: Map<string, number> = new Map();
   private errorCounts: Map<string, number> = new Map();
   private latencies: Map<string, number[]> = new Map();
+  private queueStats: any = null;
 
   /**
    * Record request metric
@@ -118,13 +119,27 @@ export class MetricsCollector {
   }
 
   /**
+   * Update queue statistics
+   */
+  updateQueueStats(stats: any): void {
+    this.queueStats = stats;
+  }
+
+  /**
    * Get metrics summary
    */
   getMetrics() {
     const summary: any = {
       requests: Object.fromEntries(this.requestCounts),
       errors: Object.fromEntries(this.errorCounts),
-      latencies: {}
+      latencies: {},
+      queue: this.queueStats || {
+        pending: 0,
+        active: 0,
+        completed: 0,
+        failed: 0,
+        totalProcessed: 0
+      }
     };
 
     // Calculate latency statistics
