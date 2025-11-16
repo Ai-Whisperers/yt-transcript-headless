@@ -146,13 +146,37 @@ npm run dev
 ### Docker Deployment
 
 ```bash
-# Build API container
+# Build unified production image (API + Web)
+docker build -t yt-transcript:latest .
+
+# Run container with recommended resource limits
+docker run -d \
+  --name yt-transcript-api \
+  --shm-size=1gb \
+  --memory=2g \
+  --cpus=2 \
+  --ulimit nofile=65536:65536 \
+  -p 3000:3000 \
+  yt-transcript:latest
+
+# Alternative: Build and run API only (development)
 cd api
 docker build -t yt-transcript-api .
-
-# Run container
-docker run -p 3000:3000 yt-transcript-api
+docker run -d \
+  --name yt-transcript-api \
+  --shm-size=1gb \
+  --memory=2g \
+  --cpus=2 \
+  --ulimit nofile=65536:65536 \
+  -p 3000:3000 \
+  yt-transcript-api
 ```
+
+**Important Docker Runtime Flags:**
+- `--shm-size=1gb` - Chromium requires shared memory for rendering (default 64MB is insufficient)
+- `--memory=2g` - Memory limit (recommended: 2GB minimum for browser operations)
+- `--cpus=2` - CPU limit (recommended: 2 CPUs for concurrent extractions)
+- `--ulimit nofile=65536:65536` - File descriptor limit (prevents "too many open files" errors)
 
 ## API Documentation
 

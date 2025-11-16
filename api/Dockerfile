@@ -102,3 +102,22 @@ EXPOSE 3000
 
 # Start application
 CMD ["node", "dist/server.js"]
+
+# ============================================
+# IMPORTANT: Runtime Configuration
+# ============================================
+# When running this container, use the following flags for optimal browser performance:
+#
+# docker run -d \
+#   --name yt-transcript-api \
+#   --shm-size=1gb \                    # Chromium requires shared memory for rendering (default 64MB is insufficient)
+#   --memory=2g \                        # Memory limit (recommended: 2GB minimum for browser operations)
+#   --cpus=2 \                           # CPU limit (recommended: 2 CPUs for concurrent extractions)
+#   --ulimit nofile=65536:65536 \        # File descriptor limit (prevents "too many open files" errors)
+#   -p 3000:3000 \
+#   yt-transcript-api:latest
+#
+# For Kubernetes deployments, ensure:
+# - resources.limits.memory: "2Gi"
+# - resources.requests.memory: "512Mi"
+# - volumeMounts with emptyDir for /dev/shm (size: 1Gi)

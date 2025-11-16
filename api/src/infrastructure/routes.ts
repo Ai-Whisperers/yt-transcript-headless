@@ -56,12 +56,35 @@ export function createRouter(): Router {
   router.get('/health', asyncHandler(async (req: Request, res: Response) => {
     const logger = req.logger || new Logger('health');
 
+    const memoryUsage = process.memoryUsage();
+    const totalMemory = memoryUsage.heapTotal + memoryUsage.external;
+    const usedMemory = memoryUsage.heapUsed + memoryUsage.external;
+    const memoryUsagePercent = (usedMemory / totalMemory) * 100;
+
+    // Log warning if memory usage exceeds 80%
+    if (memoryUsagePercent > 80) {
+      logger.warn('High memory usage detected', {
+        memoryUsagePercent: memoryUsagePercent.toFixed(2),
+        heapUsedMB: (memoryUsage.heapUsed / 1024 / 1024).toFixed(2),
+        heapTotalMB: (memoryUsage.heapTotal / 1024 / 1024).toFixed(2),
+        externalMB: (memoryUsage.external / 1024 / 1024).toFixed(2),
+        correlationId: req.correlationId
+      });
+    }
+
     const health = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       service: 'yt-transcript-api',
       uptime: process.uptime(),
-      memory: process.memoryUsage(),
+      memory: {
+        raw: memoryUsage,
+        heapUsedMB: parseFloat((memoryUsage.heapUsed / 1024 / 1024).toFixed(2)),
+        heapTotalMB: parseFloat((memoryUsage.heapTotal / 1024 / 1024).toFixed(2)),
+        externalMB: parseFloat((memoryUsage.external / 1024 / 1024).toFixed(2)),
+        rssMB: parseFloat((memoryUsage.rss / 1024 / 1024).toFixed(2)),
+        usagePercent: parseFloat(memoryUsagePercent.toFixed(2))
+      },
       correlationId: req.correlationId
     };
 
