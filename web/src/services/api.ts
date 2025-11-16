@@ -35,7 +35,101 @@ export interface ErrorResponse {
   error: {
     message: string;
     code: string;
-    details?: any;
+    timestamp: string;
+    correlationId?: string;
+    context?: any;
+  };
+}
+
+export interface PlaylistRequest {
+  url: string;
+  format?: TranscriptFormat;
+  maxVideos?: number;
+}
+
+export interface VideoTranscriptResult {
+  videoId: string;
+  videoUrl: string;
+  videoTitle?: string;
+  success: boolean;
+  transcript?: TranscriptSegment[];
+  error?: {
+    message: string;
+    code: string;
+  };
+}
+
+export interface PlaylistResponse {
+  success: boolean;
+  data?: {
+    playlistId: string;
+    playlistUrl: string;
+    playlistTitle?: string;
+    totalVideos: number;
+    processedVideos: number;
+    successfulExtractions: number;
+    failedExtractions: number;
+    results: VideoTranscriptResult[];
+    format: TranscriptFormat;
+    extractedAt: string;
+  };
+  error?: {
+    message: string;
+    code: string;
+    timestamp: string;
+    correlationId?: string;
+  };
+}
+
+export interface HealthResponse {
+  status: string;
+  timestamp: string;
+  uptime: number;
+  memory: {
+    used: number;
+    total: number;
+    percentage: number;
+  };
+  queue: {
+    pending: number;
+    active: number;
+    completed: number;
+    failed: number;
+    queueSize: number;
+  };
+  correlationId: string;
+}
+
+export interface BrowserHealthResponse {
+  browserHealthy: boolean;
+  chromiumVersion: string | null;
+  canLaunch: boolean;
+  lastChecked: string;
+  error?: string;
+}
+
+export interface MetricsResponse {
+  success: boolean;
+  data?: {
+    requests: Record<string, number>;
+    errors: Record<string, number>;
+    latencies: Record<string, {
+      count: number;
+      min: number;
+      max: number;
+      avg: number;
+      p50: number;
+      p95: number;
+      p99: number;
+    }>;
+    queue: {
+      pending: number;
+      active: number;
+      completed: number;
+      failed: number;
+    };
+    timestamp: string;
+    correlationId: string;
   };
 }
 
@@ -49,8 +143,18 @@ class TranscriptAPI {
   });
 
   async extractTranscript(request: TranscriptRequest): Promise<TranscriptResponse | ErrorResponse> {
+    const correlationId = crypto.randomUUID();
+
     try {
-      const response = await this.client.post<TranscriptResponse | ErrorResponse>('/transcribe', request);
+      const response = await this.client.post<TranscriptResponse | ErrorResponse>(
+        '/transcribe',
+        request,
+        {
+          headers: {
+            'X-Correlation-ID': correlationId
+          }
+        }
+      );
       return response.data;
     } catch (error: any) {
       if (error.response?.data) {
@@ -61,6 +165,8 @@ class TranscriptAPI {
         error: {
           message: error.message || 'Network error occurred',
           code: 'NETWORK_ERROR',
+          timestamp: new Date().toISOString(),
+          correlationId
         },
       };
     }
@@ -78,12 +184,67 @@ class TranscriptAPI {
     }
   }
 
-  async checkHealth(): Promise<boolean> {
+  async checkHealth(): Promise<HealthResponse | null> {
     try {
       const response = await this.client.get('/health');
-      return response.data.status === 'healthy';
+      return response.data;
     } catch {
-      return false;
+      return null;
+    }
+  }
+
+  async extractPlaylist(request: PlaylistRequest): Promise<PlaylistResponse> {
+    const correlationId = crypto.randomUUID();
+
+    try {
+      const response = await this.client.post<PlaylistResponse>(
+        '/transcribe/playlist',
+        request,
+        {
+          headers: { 'X-Correlation-ID': correlationId },
+          timeout: 300000 // 5 minutes for playlists
+        }
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.data) return error.response.data;
+
+      return {
+        success: false,
+        error: {
+          message: error.message || 'Network error',
+          code: 'NETWORK_ERROR',
+          timestamp: new Date().toISOString(),
+          correlationId
+        }
+      };
+    }
+  }
+
+  async checkBrowserHealth(): Promise<BrowserHealthResponse> {
+    try {
+      const response = await this.client.get('/health/browser');
+      return response.data;
+    } catch (error: any) {
+      return {
+        browserHealthy: false,
+        chromiumVersion: null,
+        canLaunch: false,
+        lastChecked: new Date().toISOString(),
+        error: error.message || 'Failed to check browser health'
+      };
+    }
+  }
+
+  async getMetrics(): Promise<MetricsResponse> {
+    try {
+      const response = await this.client.get('/metrics');
+      return { success: true, data: response.data.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        data: undefined
+      };
     }
   }
 }

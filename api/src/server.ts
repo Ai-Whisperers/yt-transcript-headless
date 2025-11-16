@@ -36,7 +36,8 @@ if (!corsOrigin && !isDevelopment) {
 app.use(cors({
   origin: corsOrigin,
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ['Content-Type', 'X-Correlation-ID'],
+  exposedHeaders: ['X-Correlation-ID']
 }));
 
 // Rate limiting for single video transcription
