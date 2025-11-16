@@ -189,7 +189,10 @@ Content-Type: application/json
 ```
 
 **Additional Endpoints:**
-- `GET /api/health` - Health check endpoint
+- `GET /api/health` - Health check endpoint with memory metrics
+- `GET /api/health/browser` - Browser health check (60s cache)
+- `GET /api/metrics` - Observability metrics (requests, errors, latencies, queue stats, browser lifecycle)
+- `POST /api/transcribe/playlist` - Batch playlist transcription
 - `GET /api/formats` - Get supported transcript formats
 - `GET /api-docs` - Interactive Swagger UI documentation
 
@@ -242,6 +245,9 @@ Content-Type: application/json
 - `EXTRACTION_FAILED` - Transcript extraction failed after retries
 - `TIMEOUT` - Operation exceeded timeout limit
 - `RATE_LIMIT_EXCEEDED` - Too many requests from IP
+- `QUEUE_FULL` - Service at capacity (503)
+- `QUEUE_TIMEOUT` - Request timed out in queue (504)
+- `EMPTY_PLAYLIST` - Playlist contains no videos
 
 ### MCP Protocol Integration
 
@@ -340,10 +346,14 @@ CORS_ORIGIN=*                     # Allowed CORS origins
 RATE_LIMIT_WINDOW=60000           # Rate limit window (ms)
 RATE_LIMIT_MAX=10                 # Max requests per window
 
+# Request Queue Configuration
+QUEUE_MAX_CONCURRENT=3            # Max concurrent browser operations
+QUEUE_MAX_SIZE=100                # Max queued requests
+QUEUE_TIMEOUT_MS=60000            # Queue timeout (ms)
+
 # Browser Configuration
-MAX_CONCURRENT_BROWSERS=5         # Max browser instances
-TIMEOUT_MS=30000                  # Operation timeout
-ENABLE_STEALTH=true               # Enable anti-detection
+TIMEOUT_MS=30000                  # Page navigation timeout
+ENABLE_STEALTH=true               # Enable anti-detection (stealth techniques)
 ```
 
 ## Development

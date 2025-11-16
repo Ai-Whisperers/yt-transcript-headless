@@ -6,13 +6,18 @@ info:
 
     **Features:**
     - Custom Playwright implementation (no third-party YouTube libraries)
-    - Stealth mode to avoid detection
+    - Disposable browser pattern with automatic resource cleanup
+    - Request queue with concurrency control (max 3 concurrent extractions)
+    - Playlist batch processing support
+    - Stealth mode to avoid detection (configurable via ENABLE_STEALTH)
     - Multiple output formats (JSON, SRT, Plain Text)
+    - Comprehensive observability (metrics, health checks, correlation IDs)
     - Rate limiting and security headers
+    - Client disconnect detection with automatic browser termination
 
     **Note:** This API uses custom web scraping and does not rely on prohibited libraries like
     youtube-transcript-api, yt-dlp, pytube, or similar third-party YouTube transcript extractors.
-  version: 1.0.0
+  version: 1.1.0
   contact:
     name: AI Whisperers
   license:
@@ -79,24 +84,122 @@ paths:
                     example: 3600.5
                   memory:
                     type: object
-                    description: Memory usage statistics
+                    description: Memory usage statistics with detailed metrics
                     properties:
-                      rss:
+                      raw:
+                        type: object
+                        description: Raw memory usage values
+                        properties:
+                          rss:
+                            type: number
+                            description: Resident Set Size
+                          heapTotal:
+                            type: number
+                            description: Total heap size
+                          heapUsed:
+                            type: number
+                            description: Used heap size
+                          external:
+                            type: number
+                            description: External memory usage
+                          arrayBuffers:
+                            type: number
+                            description: ArrayBuffer memory usage
+                      heapUsedMB:
                         type: number
-                        description: Resident Set Size
-                      heapTotal:
+                        description: Current heap memory usage in MB
+                        example: 43.0
+                      heapTotalMB:
                         type: number
-                        description: Total heap size
-                      heapUsed:
+                        description: Total allocated heap memory in MB
+                        example: 64.0
+                      externalMB:
                         type: number
-                        description: Used heap size
-                      external:
+                        description: External memory (C++ objects) in MB
+                        example: 2.0
+                      rssMB:
                         type: number
-                        description: External memory usage
+                        description: Resident Set Size (total memory) in MB
+                        example: 128.0
+                      usagePercent:
+                        type: number
+                        description: Memory usage percentage (triggers warning at 80%+)
+                        example: 67.5
                   correlationId:
                     type: string
                     format: uuid
                     description: Request correlation ID
+
+  /api/health/browser:
+    get:
+      tags:
+        - Health
+      summary: Browser health check
+      description: Verifies browser automation capabilities with 60-second caching
+      operationId: browserHealthCheck
+      parameters:
+        - in: header
+          name: X-Correlation-ID
+          schema:
+            type: string
+            format: uuid
+          description: Optional correlation ID for request tracing
+      responses:
+        '200':
+          description: Browser is healthy and operational
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Correlation ID for request tracing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  browserHealthy:
+                    type: boolean
+                    example: true
+                  chromiumVersion:
+                    type: string
+                    example: "130.0.6723.58"
+                  canLaunch:
+                    type: boolean
+                    example: true
+                  lastChecked:
+                    type: string
+                    format: date-time
+                    example: "2025-11-15T12:00:00Z"
+                  correlationId:
+                    type: string
+                    format: uuid
+        '503':
+          description: Browser launch failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  browserHealthy:
+                    type: boolean
+                    example: false
+                  chromiumVersion:
+                    type: string
+                    nullable: true
+                    example: null
+                  canLaunch:
+                    type: boolean
+                    example: false
+                  lastChecked:
+                    type: string
+                    format: date-time
+                  error:
+                    type: string
+                    example: "Browser launch failed"
+                  correlationId:
+                    type: string
+                    format: uuid
 
   /api/transcribe:
     post:
@@ -287,6 +390,235 @@ paths:
                       code: INTERNAL_ERROR
                       timestamp: '2025-11-15T10:30:00.000Z'
                       correlationId: 550e8400-e29b-41d4-a716-446655440000
+        '503':
+          description: Service at capacity (queue full)
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                queueFull:
+                  summary: Queue at capacity
+                  value:
+                    success: false
+                    error:
+                      message: Service is currently at capacity. Please try again later.
+                      code: QUEUE_FULL
+                      details:
+                        queueStats:
+                          pending: 100
+                          active: 3
+                          totalProcessed: 1500
+        '504':
+          description: Request timed out in queue
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                queueTimeout:
+                  summary: Queue timeout exceeded
+                  value:
+                    success: false
+                    error:
+                      message: Request timed out waiting in queue
+                      code: QUEUE_TIMEOUT
+                      details:
+                        queueStats:
+                          pending: 50
+                          active: 3
+                          totalProcessed: 1500
+
+  /api/transcribe/playlist:
+    post:
+      tags:
+        - Transcript
+      summary: Extract transcripts from YouTube playlist
+      description: |
+        Extracts transcripts from all videos in a YouTube playlist using batch processing.
+
+        **Process:**
+        1. Validates playlist URL format
+        2. Extracts video IDs from playlist (with auto-scroll)
+        3. Processes each video sequentially (respects queue limits)
+        4. Returns results with success/failure breakdown
+
+        **Features:**
+        - Supports maxVideos limit (default: 100)
+        - Partial failure handling (continues on individual video errors)
+        - Empty playlist detection
+        - AbortController support for client disconnects
+        - Request queue integration
+      operationId: transcribePlaylist
+      parameters:
+        - in: header
+          name: X-Correlation-ID
+          schema:
+            type: string
+            format: uuid
+          description: Optional correlation ID for request tracing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                  description: YouTube playlist URL
+                  example: "https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"
+                format:
+                  type: string
+                  enum: [json, srt, text]
+                  default: json
+                  description: Output format for transcripts
+                maxVideos:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 100
+                  description: Maximum number of videos to process
+      responses:
+        '200':
+          description: Playlist transcription completed (may include partial failures)
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Correlation ID for request tracing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      playlistUrl:
+                        type: string
+                      playlistTitle:
+                        type: string
+                      totalVideos:
+                        type: integer
+                      processedVideos:
+                        type: integer
+                      failedVideos:
+                        type: integer
+                      videos:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            videoUrl:
+                              type: string
+                            videoTitle:
+                              type: string
+                            transcript:
+                              type: array
+                              items:
+                                type: object
+                            format:
+                              type: string
+                            extractedAt:
+                              type: string
+                              format: date-time
+                      errors:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            videoUrl:
+                              type: string
+                            error:
+                              type: string
+                      extractedAt:
+                        type: string
+                        format: date-time
+                      correlationId:
+                        type: string
+                        format: uuid
+        '400':
+          description: Invalid playlist URL or parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Invalid YouTube playlist URL"
+                      code:
+                        type: string
+                        enum: [INVALID_URL, EMPTY_PLAYLIST, INVALID_FORMAT]
+                      correlationId:
+                        type: string
+                        format: uuid
+        '503':
+          description: Service at capacity (queue full)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Service is currently at capacity. Please try again later."
+                      code:
+                        type: string
+                        example: "QUEUE_FULL"
+                      details:
+                        type: object
+                        properties:
+                          queueStats:
+                            type: object
+        '504':
+          description: Request timed out in queue
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Request timed out waiting in queue"
+                      code:
+                        type: string
+                        example: "QUEUE_TIMEOUT"
 
   /api/formats:
     get:
