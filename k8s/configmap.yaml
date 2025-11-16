@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: yt-transcript-config
+  namespace: yt-transcript
+  labels:
+    app: yt-transcript-api
+data:
+  # Server configuration
+  NODE_ENV: "production"
+  PORT: "3000"
+  LOG_LEVEL: "info"
+
+  # Security & Rate Limiting
+  RATE_LIMIT_WINDOW: "60000"  # 1 minute
+  RATE_LIMIT_MAX: "10"  # 10 requests per minute
+  PLAYLIST_RATE_LIMIT_WINDOW: "300000"  # 5 minutes
+  PLAYLIST_RATE_LIMIT_MAX: "3"  # 3 playlist requests per 5 minutes
+
+  # Request Queue Configuration
+  QUEUE_MAX_CONCURRENT: "3"  # Max concurrent browser operations
+  QUEUE_MAX_SIZE: "100"  # Max queued requests
+  QUEUE_TIMEOUT_MS: "60000"  # Queue timeout (60 seconds)
+
+  # Browser Configuration
+  TIMEOUT_MS: "30000"  # Page navigation timeout (30 seconds)
+  ENABLE_STEALTH: "true"  # Enable anti-detection stealth techniques
+
+  # Observability
+  ENABLE_METRICS: "true"
+  ENABLE_CORRELATION_IDS: "true"

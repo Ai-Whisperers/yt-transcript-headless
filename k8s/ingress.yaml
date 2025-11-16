@@ -1,0 +1,63 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yt-transcript-api
+  namespace: yt-transcript
+  labels:
+    app: yt-transcript-api
+  annotations:
+    # NGINX Ingress Controller annotations
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "50"  # 50 requests per second
+    nginx.ingress.kubernetes.io/limit-connections: "100"
+
+    # CORS headers (if not handled by application)
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://yourdomain.com"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Content-Type, X-Correlation-ID"
+
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"  # 2 minutes
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+
+    # Request size limits
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+    # TLS certificate (cert-manager)
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # Connection draining
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$binary_remote_addr"
+spec:
+  ingressClassName: nginx
+
+  tls:
+  - hosts:
+    - api.yourdomain.com  # Update with your actual domain
+    secretName: yt-transcript-tls
+
+  rules:
+  - host: api.yourdomain.com  # Update with your actual domain
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: yt-transcript-api
+            port:
+              name: http
+
+      - path: /api-docs
+        pathType: Prefix
+        backend:
+          service:
+            name: yt-transcript-api
+            port:
+              name: http

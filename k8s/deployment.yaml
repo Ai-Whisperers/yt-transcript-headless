@@ -1,0 +1,169 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yt-transcript-api
+  namespace: yt-transcript
+  labels:
+    app: yt-transcript-api
+    version: v1
+spec:
+  replicas: 3  # Default replicas (HPA will scale 3-10)
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero-downtime deployments
+  selector:
+    matchLabels:
+      app: yt-transcript-api
+  template:
+    metadata:
+      labels:
+        app: yt-transcript-api
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/api/metrics"
+    spec:
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+      - name: yt-transcript-api
+        image: yt-transcript:latest  # Update with your registry/image
+        imagePullPolicy: Always
+
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+
+        env:
+        # Load non-sensitive config from ConfigMap
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: NODE_ENV
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: PORT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: LOG_LEVEL
+        - name: RATE_LIMIT_WINDOW
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: RATE_LIMIT_WINDOW
+        - name: RATE_LIMIT_MAX
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: RATE_LIMIT_MAX
+        - name: PLAYLIST_RATE_LIMIT_WINDOW
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: PLAYLIST_RATE_LIMIT_WINDOW
+        - name: PLAYLIST_RATE_LIMIT_MAX
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: PLAYLIST_RATE_LIMIT_MAX
+        - name: QUEUE_MAX_CONCURRENT
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: QUEUE_MAX_CONCURRENT
+        - name: QUEUE_MAX_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: QUEUE_MAX_SIZE
+        - name: QUEUE_TIMEOUT_MS
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: QUEUE_TIMEOUT_MS
+        - name: TIMEOUT_MS
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: TIMEOUT_MS
+        - name: ENABLE_STEALTH
+          valueFrom:
+            configMapKeyRef:
+              name: yt-transcript-config
+              key: ENABLE_STEALTH
+
+        # Load sensitive config from Secret
+        - name: CORS_ORIGIN
+          valueFrom:
+            secretKeyRef:
+              name: yt-transcript-secret
+              key: CORS_ORIGIN
+
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 2Gi
+
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false  # Playwright requires write access
+          runAsNonRoot: true
+          runAsUser: 1000
+
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: playwright-cache
+          mountPath: /home/appuser/.cache
+
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: playwright-cache
+        emptyDir: {}
+
+      terminationGracePeriodSeconds: 30
