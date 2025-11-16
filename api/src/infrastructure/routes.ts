@@ -34,8 +34,23 @@ export function createRouter(): Router {
   );
   const mcpHandler = new ExpressMCPHandler();
 
-  // Initialize request queue (3 concurrent, max 100 queued, 60s timeout)
-  const requestQueue = new RequestQueue(3, 100, 60000, queueLogger);
+  // Initialize request queue with environment-based configuration
+  const queueMaxConcurrent = parseInt(process.env.QUEUE_MAX_CONCURRENT || '3', 10);
+  const queueMaxSize = parseInt(process.env.QUEUE_MAX_SIZE || '100', 10);
+  const queueTimeoutMs = parseInt(process.env.QUEUE_TIMEOUT_MS || '60000', 10);
+
+  logger.info('Request queue configuration', {
+    maxConcurrent: queueMaxConcurrent,
+    maxSize: queueMaxSize,
+    timeoutMs: queueTimeoutMs
+  });
+
+  const requestQueue = new RequestQueue(
+    queueMaxConcurrent,
+    queueMaxSize,
+    queueTimeoutMs,
+    queueLogger
+  );
 
   // Health check endpoint with metrics
   router.get('/health', asyncHandler(async (req: Request, res: Response) => {

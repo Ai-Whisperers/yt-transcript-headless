@@ -77,6 +77,10 @@ RUN npm ci --only=production && \
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
 
+# Copy swagger.yaml to dist/infrastructure for API documentation
+RUN mkdir -p ./dist/infrastructure
+COPY src/infrastructure/swagger.yaml ./dist/infrastructure/swagger.yaml
+
 # Create non-root user
 RUN groupadd -r appuser && \
     useradd -r -g appuser -G audio,video appuser && \
