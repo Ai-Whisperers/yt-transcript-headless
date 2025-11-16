@@ -11,6 +11,12 @@ describe('RequestQueue - Phase 3', () => {
   });
 
   afterEach(async () => {
+    // Drain queue before clearing to prevent unhandled rejections
+    try {
+      await queue.drain();
+    } catch {
+      // Ignore drain errors, just clear
+    }
     queue.clear();
   });
 
@@ -89,7 +95,7 @@ describe('RequestQueue - Phase 3', () => {
         queue.add(async () => {
           await new Promise(resolve => setTimeout(resolve, 5000));
           return 'done';
-        })
+        }).catch(() => 'cleared') // Handle rejection when queue is cleared
       );
 
       // Wait for queue to fill
@@ -100,8 +106,9 @@ describe('RequestQueue - Phase 3', () => {
         queue.add(async () => 'should fail')
       ).rejects.toThrow('Queue is full');
 
-      // Cleanup
+      // Cleanup - clear queue and wait for all tasks to be rejected
       queue.clear();
+      await Promise.all(longTasks);
     }, 10000);
   });
 
