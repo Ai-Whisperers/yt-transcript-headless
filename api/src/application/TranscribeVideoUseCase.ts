@@ -5,7 +5,7 @@ import {
   TranscriptSegment
 } from '../domain/TranscriptSegment';
 import { TranscriptExtractor } from '../infrastructure/TranscriptExtractor';
-import { Logger } from '../infrastructure/Logger';
+import { ILogger } from '../domain/ILogger';
 import {
   InvalidUrlError,
   TranscriptNotFoundError,
@@ -14,9 +14,9 @@ import {
 
 export class TranscribeVideoUseCase {
   private extractor: TranscriptExtractor;
-  private logger: Logger;
+  private logger: ILogger;
 
-  constructor(extractor: TranscriptExtractor, logger: Logger) {
+  constructor(extractor: TranscriptExtractor, logger: ILogger) {
     this.extractor = extractor;
     this.logger = logger;
   }
@@ -174,13 +174,26 @@ export class TranscribeVideoUseCase {
   }
 
   private timeToSRT(time: string): string {
-    // Convert MM:SS to HH:MM:SS,mmm format
+    // Convert MM:SS or HH:MM:SS to HH:MM:SS,mmm format
     const parts = time.split(':');
+
     if (parts.length === 2) {
-      const [minutes, seconds] = parts;
+      // Format is MM:SS
+      const totalMinutes = parseInt(parts[0], 10);
+      const seconds = parseInt(parts[1], 10);
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      const hh = hours.toString().padStart(2, '0');
+      const mm = minutes.toString().padStart(2, '0');
+      const ss = seconds.toString().padStart(2, '0');
+      return `${hh}:${mm}:${ss},000`;
+    } else if (parts.length === 3) {
+      // Format is already HH:MM:SS
+      const [hours, minutes, seconds] = parts;
+      const hh = hours.padStart(2, '0');
       const mm = minutes.padStart(2, '0');
       const ss = seconds.padStart(2, '0');
-      return `00:${mm}:${ss},000`;
+      return `${hh}:${mm}:${ss},000`;
     }
     return `00:00:00,000`;
   }
@@ -188,10 +201,18 @@ export class TranscribeVideoUseCase {
   private addSeconds(time: string, seconds: number): string {
     const parts = time.split(':');
     if (parts.length === 2) {
-      const totalSeconds = parseInt(parts[0]) * 60 + parseInt(parts[1]) + seconds;
+      // Format is MM:SS
+      const totalSeconds = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) + seconds;
       const mm = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
       const ss = (totalSeconds % 60).toString().padStart(2, '0');
       return `${mm}:${ss}`;
+    } else if (parts.length === 3) {
+      // Format is HH:MM:SS
+      const totalSeconds = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseInt(parts[2], 10) + seconds;
+      const hh = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+      const mm = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+      const ss = (totalSeconds % 60).toString().padStart(2, '0');
+      return `${hh}:${mm}:${ss}`;
     }
     return '00:03';
   }

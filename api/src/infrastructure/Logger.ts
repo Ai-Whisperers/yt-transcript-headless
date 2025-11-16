@@ -1,16 +1,8 @@
 import winston from 'winston';
 import { AppError } from '../domain/errors';
+import { ILogger, LogContext } from '../domain/ILogger';
 
-export interface LogContext {
-  correlationId?: string;
-  userId?: string;
-  videoUrl?: string;
-  operation?: string;
-  duration?: number;
-  [key: string]: any;
-}
-
-export class Logger {
+export class Logger implements ILogger {
   private logger: winston.Logger;
   private service: string;
   private defaultContext: LogContext;
@@ -62,7 +54,7 @@ export class Logger {
   /**
    * Create child logger with additional context
    */
-  child(context: LogContext): Logger {
+  child(context: LogContext): ILogger {
     return new Logger(this.service, { ...this.defaultContext, ...context });
   }
 

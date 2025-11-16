@@ -1,4 +1,5 @@
 import { Logger } from './Logger';
+import { ILogger } from '../domain/ILogger';
 
 export interface QueueStats {
   pending: number;
@@ -10,11 +11,12 @@ export interface QueueStats {
 }
 
 export interface QueuedTask<T> {
-  execute: () => Promise<T>;
+  execute: (signal?: AbortSignal) => Promise<T>;
   resolve: (value: T) => void;
   reject: (error: Error) => void;
   addedAt: number;
   timeout?: NodeJS.Timeout;
+  abortController?: AbortController;
 }
 
 export class RequestQueue {
@@ -23,7 +25,7 @@ export class RequestQueue {
   private readonly maxConcurrency: number;
   private readonly maxQueueSize: number;
   private readonly queueTimeout: number;
-  private logger: Logger;
+  private logger: ILogger;
 
   // Statistics
   private stats = {
@@ -53,7 +55,7 @@ export class RequestQueue {
   /**
    * Add a task to the queue with timeout protection
    */
-  async add<T>(task: () => Promise<T>): Promise<T> {
+  async add<T>(task: (signal?: AbortSignal) => Promise<T>): Promise<T> {
     // Check if queue is full
     if (this.queue.length >= this.maxQueueSize) {
       this.logger.warn('Queue is full, rejecting task', {
@@ -65,6 +67,7 @@ export class RequestQueue {
 
     return new Promise<T>((resolve, reject) => {
       const addedAt = Date.now();
+      const abortController = new AbortController();
 
       // Create timeout for queue wait time
       const timeout = setTimeout(() => {
@@ -73,7 +76,10 @@ export class RequestQueue {
           queueTimeout: this.queueTimeout
         });
 
-        // Remove from queue
+        // Abort the task if it's executing
+        abortController.abort();
+
+        // Remove from queue if still pending
         const index = this.queue.findIndex(t => t.addedAt === addedAt);
         if (index !== -1) {
           this.queue.splice(index, 1);
@@ -87,7 +93,8 @@ export class RequestQueue {
         resolve,
         reject,
         addedAt,
-        timeout
+        timeout,
+        abortController
       };
 
       this.queue.push(queuedTask);
@@ -131,7 +138,8 @@ export class RequestQueue {
     });
 
     try {
-      const result = await task.execute();
+      // Pass abort signal to task execution
+      const result = await task.execute(task.abortController?.signal);
 
       this.stats.completed++;
       this.stats.totalProcessed++;
@@ -142,16 +150,17 @@ export class RequestQueue {
       });
 
       task.resolve(result);
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.stats.failed++;
       this.stats.totalProcessed++;
 
-      this.logger.error('Task execution failed', error, {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      this.logger.error('Task execution failed', errorObj, {
         totalProcessed: this.stats.totalProcessed,
         failed: this.stats.failed
       });
 
-      task.reject(error);
+      task.reject(errorObj);
     } finally {
       this.active--;
 
@@ -182,10 +191,13 @@ export class RequestQueue {
       pendingTasks: this.queue.length
     });
 
-    // Clear all timeouts
+    // Clear all timeouts and abort controllers
     this.queue.forEach(task => {
       if (task.timeout) {
         clearTimeout(task.timeout);
+      }
+      if (task.abortController) {
+        task.abortController.abort();
       }
       task.reject(new Error('Queue cleared'));
     });

@@ -210,7 +210,15 @@ export class TranscriptExtractor {
     if (segments.length === 0) {
       // Try alternative extraction method
       this.logger.warn('Primary extraction failed, trying alternative method');
-      return await this.extractTranscriptAlternative(page);
+      const alternativeSegments = await this.extractTranscriptAlternative(page);
+
+      // Validate that alternative extraction returned segments
+      if (alternativeSegments.length === 0) {
+        this.logger.error('Both primary and alternative extraction methods returned no segments');
+        throw new Error('No transcript segments found after trying all extraction methods');
+      }
+
+      return alternativeSegments;
     }
 
     return segments;

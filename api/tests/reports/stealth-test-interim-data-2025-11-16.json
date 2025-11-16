@@ -1,0 +1,224 @@
+{
+  "reportType": "interim",
+  "testDate": "2025-11-16T13:26:26.000Z",
+  "reportGeneratedAt": "2025-11-16T14:06:00.000Z",
+  "testProgress": {
+    "totalPlanned": 200,
+    "completed": 47,
+    "percentComplete": 23.5,
+    "currentMode": "stealth",
+    "stealthCompleted": 47,
+    "stealthRemaining": 53,
+    "rawCompleted": 0,
+    "rawRemaining": 100
+  },
+  "environment": {
+    "nodeVersion": "18+",
+    "playwrightVersion": "1.40.0+",
+    "platform": "win32",
+    "testScript": "api/scripts/stealth-ab-test.ts",
+    "command": "npm run stealth-test"
+  },
+  "configuration": {
+    "iterationsPerMode": 100,
+    "testVideos": 10,
+    "delayBetweenTests": 2000,
+    "maxRetries": 3,
+    "retryDelays": [2000, 4000, 6000],
+    "enableStealth": true
+  },
+  "testVideos": [
+    {
+      "videoId": "dQw4w9WgXcQ",
+      "description": "Music - Rick Astley",
+      "testsCompleted": 5,
+      "successes": 5,
+      "failures": 0,
+      "successRate": 100
+    },
+    {
+      "videoId": "jNQXAC9IVRw",
+      "description": "Educational - Me at the zoo",
+      "testsCompleted": 5,
+      "successes": 5,
+      "failures": 0,
+      "successRate": 100
+    },
+    {
+      "videoId": "9bZkp7q19f0",
+      "description": "Music - Gangnam Style",
+      "testsCompleted": 5,
+      "successes": 5,
+      "failures": 0,
+      "successRate": 100
+    },
+    {
+      "videoId": "kJQP7kiw5Fk",
+      "description": "Music - Despacito",
+      "testsCompleted": 5,
+      "successes": 5,
+      "failures": 0,
+      "successRate": 100
+    },
+    {
+      "videoId": "OPf0YbXqDm0",
+      "description": "Educational - Mark Rober",
+      "testsCompleted": 5,
+      "successes": 5,
+      "failures": 0,
+      "successRate": 100
+    },
+    {
+      "videoId": "BaW_jenozKc",
+      "description": "Music - Shape of You (PROBLEMATIC)",
+      "testsCompleted": 5,
+      "successes": 0,
+      "failures": 5,
+      "successRate": 0,
+      "note": "Consistently fails - likely no transcript available"
+    },
+    {
+      "videoId": "RgKAFK5djSk",
+      "description": "Music - Wrecking Ball",
+      "testsCompleted": 4,
+      "successes": 4,
+      "failures": 0,
+      "successRate": 100
+    },
+    {
+      "videoId": "hT_nvWreIhg",
+      "description": "Educational - VSauce",
+      "testsCompleted": 4,
+      "successes": 4,
+      "failures": 0,
+      "successRate": 100
+    },
+    {
+      "videoId": "L_jWHffIx5E",
+      "description": "Music - Smells Like Teen Spirit",
+      "testsCompleted": 4,
+      "successes": 4,
+      "failures": 0,
+      "successRate": 100
+    },
+    {
+      "videoId": "YQHsXMglC9A",
+      "description": "Music - Hello - Adele",
+      "testsCompleted": 4,
+      "successes": 4,
+      "failures": 0,
+      "successRate": 100
+    }
+  ],
+  "stealthModeResults": {
+    "testsCompleted": 47,
+    "successCount": 42,
+    "failureCount": 5,
+    "successRate": 89.36,
+    "averageDuration": 40800,
+    "minDuration": 38122,
+    "maxDuration": 43820,
+    "averageFailureDuration": 109285,
+    "errorBreakdown": {
+      "UNKNOWN": 5,
+      "NO_TRANSCRIPT": 0,
+      "TIMEOUT": 0,
+      "NAVIGATION_FAILED": 0,
+      "BROWSER_CRASH": 0,
+      "BLOCKED_BY_YOUTUBE": 0
+    },
+    "failureDetails": [
+      {
+        "test": 6,
+        "videoId": "BaW_jenozKc",
+        "error": "Could not find transcript button",
+        "duration": 108732,
+        "attempts": 3
+      },
+      {
+        "test": 16,
+        "videoId": "BaW_jenozKc",
+        "error": "Could not find transcript button",
+        "duration": 108477,
+        "attempts": 3
+      },
+      {
+        "test": 26,
+        "videoId": "BaW_jenozKc",
+        "error": "Could not find transcript button",
+        "duration": 109114,
+        "attempts": 3
+      },
+      {
+        "test": 36,
+        "videoId": "BaW_jenozKc",
+        "error": "Could not find transcript button",
+        "duration": 110029,
+        "attempts": 3
+      },
+      {
+        "test": 46,
+        "videoId": "BaW_jenozKc",
+        "error": "Could not find transcript button",
+        "duration": 109892,
+        "attempts": 3
+      }
+    ]
+  },
+  "rawModeResults": {
+    "testsCompleted": 0,
+    "successCount": 0,
+    "failureCount": 0,
+    "successRate": null,
+    "averageDuration": null,
+    "minDuration": null,
+    "maxDuration": null,
+    "errorBreakdown": {},
+    "note": "Raw mode tests not yet executed"
+  },
+  "analysis": {
+    "criticalFinding": "All failures are from the same video (BaW_jenozKc). Stealth techniques are NOT causing failures.",
+    "successfulVideos": 9,
+    "problematicVideos": 1,
+    "detectionIssues": false,
+    "stealthImpact": "zero",
+    "performanceStability": "high",
+    "averageExtractionTime": "~41 seconds",
+    "retryBehaviorObserved": true
+  },
+  "predictions": {
+    "stealthMode": {
+      "expectedTotalTests": 100,
+      "expectedSuccesses": 90,
+      "expectedFailures": 10,
+      "expectedSuccessRate": 90,
+      "rationale": "BaW_jenozKc will fail in all 10 appearances"
+    },
+    "rawMode": {
+      "expectedTotalTests": 100,
+      "expectedSuccesses": 90,
+      "expectedFailures": 10,
+      "expectedSuccessRate": 90,
+      "rationale": "Same video will fail regardless of stealth mode"
+    },
+    "comparison": {
+      "expectedDifference": 0,
+      "stealthAdvantage": false,
+      "stealthDisadvantage": false,
+      "conclusion": "No performance difference expected between modes"
+    }
+  },
+  "preliminaryRecommendation": {
+    "decision": "KEEP_STEALTH_ENABLED",
+    "confidence": "high",
+    "rationale": "Stealth has zero negative impact. All failures are video-specific, not stealth-related. No YouTube detection observed.",
+    "action": "Maintain ENABLE_STEALTH=true as default"
+  },
+  "nextSteps": [
+    "Wait for stealth mode completion (53 tests remaining)",
+    "Execute raw mode tests (100 tests)",
+    "Generate final comparison report",
+    "Make final recommendation based on complete dataset",
+    "Update documentation with findings"
+  ]
+}

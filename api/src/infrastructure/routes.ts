@@ -15,7 +15,12 @@ import {
 import { ExpressMCPHandler } from '../mcp/express-mcp-handler';
 import { RequestQueue } from './RequestQueue';
 
-export function createRouter(): Router {
+export interface RouterContext {
+  router: Router;
+  requestQueue: RequestQueue;
+}
+
+export function createRouter(): RouterContext {
   const router = Router();
   const logger = new Logger('api-routes');
   const browserLogger = new Logger('browser-manager');
@@ -85,10 +90,11 @@ export function createRouter(): Router {
         rssMB: parseFloat((memoryUsage.rss / 1024 / 1024).toFixed(2)),
         usagePercent: parseFloat(memoryUsagePercent.toFixed(2))
       },
+      queue: requestQueue.getStats(),
       correlationId: req.correlationId
     };
 
-    logger.info('Health check', { correlationId: req.correlationId });
+    logger.info('Health check', { correlationId: req.correlationId, queueStats: requestQueue.getStats() });
     res.json(health);
   }));
 
@@ -316,10 +322,22 @@ export function createRouter(): Router {
       throw new InvalidFormatError(format, Object.values(TranscriptFormat));
     }
 
+    // Validate and cap maxVideos to prevent resource exhaustion
+    const MAX_VIDEOS_LIMIT = parseInt(process.env.PLAYLIST_MAX_VIDEOS_LIMIT || '100', 10);
+    const requestedMaxVideos = maxVideos || 100;
+
+    if (requestedMaxVideos > MAX_VIDEOS_LIMIT) {
+      logger.warn('Requested maxVideos exceeds limit, capping to maximum', {
+        requested: requestedMaxVideos,
+        capped: MAX_VIDEOS_LIMIT,
+        correlationId: req.correlationId
+      });
+    }
+
     const request: PlaylistRequest = {
       url,
       format: format as TranscriptFormat,
-      maxVideos: maxVideos || 100
+      maxVideos: Math.min(requestedMaxVideos, MAX_VIDEOS_LIMIT)
     };
 
     logger.info('Queueing playlist transcription', {
@@ -425,5 +443,5 @@ export function createRouter(): Router {
     logger.info('SIGINT received - graceful shutdown initiated');
   });
 
-  return router;
+  return { router, requestQueue };
 }

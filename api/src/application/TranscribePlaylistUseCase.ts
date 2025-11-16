@@ -2,18 +2,18 @@ import { PlaylistRequest, PlaylistResponse, VideoTranscriptResult } from '../dom
 import { TranscriptFormat, TranscriptRequest } from '../domain/TranscriptSegment';
 import { PlaylistExtractor } from '../infrastructure/PlaylistExtractor';
 import { TranscribeVideoUseCase } from './TranscribeVideoUseCase';
-import { Logger } from '../infrastructure/Logger';
+import { ILogger } from '../domain/ILogger';
 import { InvalidUrlError } from '../domain/errors';
 
 export class TranscribePlaylistUseCase {
   private playlistExtractor: PlaylistExtractor;
   private transcribeVideoUseCase: TranscribeVideoUseCase;
-  private logger: Logger;
+  private logger: ILogger;
 
   constructor(
     playlistExtractor: PlaylistExtractor,
     transcribeVideoUseCase: TranscribeVideoUseCase,
-    logger: Logger
+    logger: ILogger
   ) {
     this.playlistExtractor = playlistExtractor;
     this.transcribeVideoUseCase = transcribeVideoUseCase;

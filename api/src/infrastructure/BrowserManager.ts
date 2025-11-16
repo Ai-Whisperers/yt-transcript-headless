@@ -181,7 +181,7 @@ export class BrowserManager {
 
         if (attempt < maxRetries) {
           metricsCollector.recordExtractionRetry();
-          const delay = 1000 * attempt; // Progressive delay
+          const delay = 2000 * attempt; // Progressive delay (2000ms per standard)
           this.logger.info(`Retrying context creation in ${delay}ms`);
           await this.wait(delay);
         }

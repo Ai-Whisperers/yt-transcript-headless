@@ -365,7 +365,7 @@ class YouTubeTranscriptMCPServer {
 
   private async shutdown(): Promise<void> {
     this.logger.info('Shutting down MCP server...');
-    await this.browserManager.close();
+    // BrowserManager uses disposable pattern, no explicit close needed
     await this.server.close();
     this.logger.info('MCP server shutdown complete');
   }

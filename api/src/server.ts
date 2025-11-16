@@ -25,13 +25,21 @@ app.use(helmet({
   hsts: isDevelopment ? false : undefined, // Disable HTTPS redirect in development
   contentSecurityPolicy: false // Disable CSP for Swagger UI to work
 }));
+
+// CORS configuration - fail fast in production if not set
+const corsOrigin = process.env.CORS_ORIGIN || (isDevelopment ? 'http://localhost:5173' : undefined);
+if (!corsOrigin && !isDevelopment) {
+  logger.error('CORS_ORIGIN environment variable must be set in production');
+  process.exit(1);
+}
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: corsOrigin,
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type']
 }));
 
-// Rate limiting
+// Rate limiting for single video transcription
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW || '60000'), // 1 minute default
   max: parseInt(process.env.RATE_LIMIT_MAX || '10'), // 10 requests per window
@@ -40,6 +48,16 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Stricter rate limiting for playlist endpoint (more resource intensive)
+const playlistLimiter = rateLimit({
+  windowMs: parseInt(process.env.PLAYLIST_RATE_LIMIT_WINDOW || '300000'), // 5 minutes default
+  max: parseInt(process.env.PLAYLIST_RATE_LIMIT_MAX || '3'), // 3 requests per window
+  message: 'Too many playlist requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/transcribe/playlist', playlistLimiter);
 app.use('/api/transcribe', limiter);
 
 // Body parsing middleware
@@ -74,7 +92,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
 }));
 
 // API routes
-app.use('/api', createRouter());
+const { router, requestQueue } = createRouter();
+app.use('/api', router);
 
 // Serve static frontend files in production
 if (process.env.NODE_ENV === 'production') {
@@ -126,6 +145,15 @@ const server = app.listen(PORT, () => {
 // Graceful shutdown
 const gracefulShutdown = async () => {
   logger.info('Starting graceful shutdown...');
+
+  // Drain the request queue first (wait for in-flight browser operations)
+  try {
+    logger.info('Draining request queue...');
+    await requestQueue.drain();
+    logger.info('Request queue drained successfully');
+  } catch (error) {
+    logger.error('Error draining request queue', error instanceof Error ? error : new Error(String(error)));
+  }
 
   server.close(() => {
     logger.info('HTTP server closed');
