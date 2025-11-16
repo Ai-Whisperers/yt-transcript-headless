@@ -4,9 +4,15 @@ import { metricsCollector } from './middleware/observability';
 
 export class BrowserManager {
   private logger: Logger;
+  private stealthEnabled: boolean;
 
   constructor(logger: Logger) {
     this.logger = logger;
+    // Feature flag for stealth techniques (default: true for backward compatibility)
+    this.stealthEnabled = process.env.ENABLE_STEALTH !== 'false';
+    this.logger.info('BrowserManager initialized', {
+      stealthEnabled: this.stealthEnabled
+    });
   }
 
   /**
@@ -158,8 +164,13 @@ export class BrowserManager {
           },
         });
 
-        // Apply stealth techniques
-        await this.applyStealth(context);
+        // Apply stealth techniques (conditional based on feature flag)
+        if (this.stealthEnabled) {
+          await this.applyStealth(context);
+          this.logger.info('Stealth techniques applied');
+        } else {
+          this.logger.info('Stealth techniques disabled (raw Chromium mode)');
+        }
 
         this.logger.info('Browser context created successfully');
         return context;

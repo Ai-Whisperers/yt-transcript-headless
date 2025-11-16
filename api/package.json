@@ -12,6 +12,8 @@
     "test": "jest",
     "test:unit": "jest --testPathPattern=unit",
     "test:e2e": "jest --testPathPattern=e2e",
+    "stealth-test": "tsx scripts/stealth-ab-test.ts",
+    "stealth-test:quick": "tsx scripts/stealth-ab-test.ts 10",
     "lint": "eslint src/**/*.ts"
   },
   "keywords": [
