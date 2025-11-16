@@ -1,5 +1,6 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import { Logger } from './Logger';
+import { metricsCollector } from './middleware/observability';
 
 export class BrowserManager {
   private logger: Logger;
@@ -30,17 +31,20 @@ export class BrowserManager {
         if (page) {
           await page.close().catch((err) => {
             this.logger.warn('Failed to close page', err);
+            metricsCollector.recordBrowserCleanupFailure();
           });
         }
         if (context) {
           await context.close().catch((err) => {
             this.logger.warn('Failed to close context', err);
+            metricsCollector.recordBrowserCleanupFailure();
           });
         }
       } finally {
         if (browser) {
           await browser.close().catch((err) => {
             this.logger.error('Failed to close browser', err);
+            metricsCollector.recordBrowserCleanupFailure();
           });
         }
         this.logger.info('Browser cleanup completed');
@@ -62,6 +66,7 @@ export class BrowserManager {
     try {
       // Launch fresh browser instance
       this.logger.info('Launching fresh browser instance');
+      const launchStart = Date.now();
       browser = await chromium.launch({
         headless: true,
         args: [
@@ -81,6 +86,9 @@ export class BrowserManager {
           '--single-process'
         ],
       });
+      const launchDuration = Date.now() - launchStart;
+      metricsCollector.recordBrowserLaunch(launchDuration);
+      this.logger.info('Browser launched', { launchDurationMs: launchDuration });
 
       // Create context with retry wrapper
       context = await this.createContextWithRetry(browser, 3);
@@ -161,6 +169,7 @@ export class BrowserManager {
         this.logger.warn(`Context creation attempt ${attempt} failed: ${error.message}`);
 
         if (attempt < maxRetries) {
+          metricsCollector.recordExtractionRetry();
           const delay = 1000 * attempt; // Progressive delay
           this.logger.info(`Retrying context creation in ${delay}ms`);
           await this.wait(delay);

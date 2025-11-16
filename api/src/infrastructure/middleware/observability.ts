@@ -88,6 +88,12 @@ export class MetricsCollector {
   private latencies: Map<string, number[]> = new Map();
   private queueStats: any = null;
 
+  // Browser lifecycle metrics
+  private browserLaunchCount = 0;
+  private browserLaunchDurations: number[] = [];
+  private browserCleanupFailures = 0;
+  private extractionRetries = 0;
+
   /**
    * Record request metric
    */
@@ -126,6 +132,33 @@ export class MetricsCollector {
   }
 
   /**
+   * Record browser launch
+   */
+  recordBrowserLaunch(durationMs: number): void {
+    this.browserLaunchCount++;
+    this.browserLaunchDurations.push(durationMs);
+
+    // Keep only last 100 measurements
+    if (this.browserLaunchDurations.length > 100) {
+      this.browserLaunchDurations.shift();
+    }
+  }
+
+  /**
+   * Record browser cleanup failure
+   */
+  recordBrowserCleanupFailure(): void {
+    this.browserCleanupFailures++;
+  }
+
+  /**
+   * Record extraction retry
+   */
+  recordExtractionRetry(): void {
+    this.extractionRetries++;
+  }
+
+  /**
    * Get metrics summary
    */
   getMetrics() {
@@ -139,6 +172,18 @@ export class MetricsCollector {
         completed: 0,
         failed: 0,
         totalProcessed: 0
+      },
+      browser: {
+        launchCount: this.browserLaunchCount,
+        cleanupFailures: this.browserCleanupFailures,
+        extractionRetries: this.extractionRetries,
+        launchDuration: this.browserLaunchDurations.length > 0 ? {
+          count: this.browserLaunchDurations.length,
+          min: Math.min(...this.browserLaunchDurations),
+          max: Math.max(...this.browserLaunchDurations),
+          avg: this.browserLaunchDurations.reduce((a, b) => a + b, 0) / this.browserLaunchDurations.length,
+          p95: [...this.browserLaunchDurations].sort((a, b) => a - b)[Math.floor(this.browserLaunchDurations.length * 0.95)]
+        } : null
       }
     };
 

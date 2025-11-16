@@ -113,6 +113,76 @@ export function createRouter(): Router {
     });
   }));
 
+  // Browser health check endpoint with caching
+  let browserHealthCache: {
+    result: any;
+    timestamp: number;
+  } | null = null;
+  const BROWSER_HEALTH_CACHE_TTL = 60000; // 60 seconds
+
+  router.get('/health/browser', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('browser-health');
+    const now = Date.now();
+
+    // Return cached result if available and not expired
+    if (browserHealthCache && (now - browserHealthCache.timestamp) < BROWSER_HEALTH_CACHE_TTL) {
+      logger.info('Returning cached browser health check', {
+        cacheAge: now - browserHealthCache.timestamp,
+        correlationId: req.correlationId
+      });
+      return res.json(browserHealthCache.result);
+    }
+
+    // Perform browser health check
+    logger.info('Performing browser health check', { correlationId: req.correlationId });
+
+    try {
+      const healthResult = await browserManager.runIsolated(async (page, context, browser) => {
+        const browserVersion = browser.version();
+
+        // Verify page is functional
+        await page.evaluate(() => true);
+
+        return {
+          browserHealthy: true,
+          chromiumVersion: browserVersion,
+          canLaunch: true,
+          lastChecked: new Date().toISOString(),
+          correlationId: req.correlationId
+        };
+      });
+
+      // Cache successful result
+      browserHealthCache = {
+        result: healthResult,
+        timestamp: now
+      };
+
+      logger.info('Browser health check passed', {
+        chromiumVersion: healthResult.chromiumVersion,
+        correlationId: req.correlationId
+      });
+
+      res.json(healthResult);
+    } catch (error: any) {
+      logger.error('Browser health check failed', error, {
+        correlationId: req.correlationId
+      });
+
+      const failureResult = {
+        browserHealthy: false,
+        chromiumVersion: null,
+        canLaunch: false,
+        lastChecked: new Date().toISOString(),
+        error: error.message,
+        correlationId: req.correlationId
+      };
+
+      // Don't cache failure results to allow quick recovery
+      res.status(503).json(failureResult);
+    }
+  }));
+
   // Main transcribe endpoint (with queue)
   router.post('/transcribe', asyncHandler(async (req: Request, res: Response) => {
     const logger = req.logger || new Logger('transcribe');
