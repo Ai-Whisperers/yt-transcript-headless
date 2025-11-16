@@ -1,13 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { Logger } from '../Logger';
+import { ILogger } from '../../domain/ILogger';
 
 declare global {
   namespace Express {
     interface Request {
       correlationId?: string;
       startTime?: number;
-      logger?: Logger;
+      logger?: ILogger;
     }
   }
 }

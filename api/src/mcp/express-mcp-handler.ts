@@ -1,10 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { TranscribeVideoUseCase } from '../application/TranscribeVideoUseCase.js';
-import { BrowserManager } from '../infrastructure/BrowserManager.js';
-import { TranscriptExtractor } from '../infrastructure/TranscriptExtractor.js';
-import { Logger } from '../infrastructure/Logger.js';
-import { TranscriptFormat } from '../domain/TranscriptSegment.js';
+import { TranscribeVideoUseCase } from '../application/TranscribeVideoUseCase';
+import { BrowserManager } from '../infrastructure/BrowserManager';
+import { TranscriptExtractor } from '../infrastructure/TranscriptExtractor';
+import { Logger } from '../infrastructure/Logger';
+import { TranscriptFormat } from '../domain/TranscriptSegment';
 
 
 const MCPRequestSchema = z.object({
