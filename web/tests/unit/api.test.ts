@@ -321,14 +321,17 @@ describe('TranscriptAPI', () => {
 
   describe('getFormats', () => {
     it('returns formats array on success', async () => {
-      const mockFormats = {
-        formats: ['json', 'srt', 'text'],
-        default: 'json'
+      const mockFormatsResponse = {
+        success: true,
+        data: {
+          formats: ['json', 'srt', 'text'],
+          default: 'json'
+        }
       };
 
       const mockAxiosInstance = {
         post: vi.fn(),
-        get: vi.fn().mockResolvedValue({ data: mockFormats })
+        get: vi.fn().mockResolvedValue({ data: mockFormatsResponse })
       };
 
       mockedAxios.create = vi.fn().mockReturnValue(mockAxiosInstance);

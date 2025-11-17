@@ -30,14 +30,21 @@ function App() {
   useEffect(() => {
     // Initialize on mount: check health and load formats
     const initialize = async () => {
-      const [healthData, formatsData] = await Promise.all([
-        api.checkHealth(),
-        api.getFormats()
-      ]);
+      try {
+        const [healthData, formatsData] = await Promise.all([
+          api.checkHealth(),
+          api.getFormats()
+        ]);
 
-      setHealth(healthData);
-      setAvailableFormats(formatsData.formats);
-      setFormat(formatsData.default);
+        setHealth(healthData);
+        setAvailableFormats(formatsData.formats);
+        setFormat(formatsData.default);
+      } catch (error) {
+        console.error('Failed to initialize app:', error);
+        // Set fallback formats if API fails
+        setAvailableFormats(Object.values(TranscriptFormat));
+        setFormat(TranscriptFormat.JSON);
+      }
     };
 
     initialize();

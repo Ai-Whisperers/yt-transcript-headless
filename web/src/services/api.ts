@@ -175,7 +175,7 @@ class TranscriptAPI {
   async getFormats(): Promise<{ formats: TranscriptFormat[]; default: TranscriptFormat }> {
     try {
       const response = await this.client.get('/formats');
-      return response.data;
+      return response.data.data;
     } catch (error) {
       return {
         formats: Object.values(TranscriptFormat),
