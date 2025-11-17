@@ -264,7 +264,9 @@ export function createRouter(): RouterContext {
           error: {
             message: 'Service is currently at capacity. Please try again later.',
             code: 'QUEUE_FULL',
-            details: {
+            timestamp: new Date().toISOString(),
+            correlationId: req.correlationId,
+            context: {
               queueStats: requestQueue.getStats()
             }
           }
@@ -278,7 +280,9 @@ export function createRouter(): RouterContext {
           error: {
             message: 'Request timed out waiting in queue',
             code: 'QUEUE_TIMEOUT',
-            details: {
+            timestamp: new Date().toISOString(),
+            correlationId: req.correlationId,
+            context: {
               queueStats: requestQueue.getStats()
             }
           }
@@ -396,7 +400,9 @@ export function createRouter(): RouterContext {
           error: {
             message: 'Service is currently at capacity. Please try again later.',
             code: 'QUEUE_FULL',
-            details: {
+            timestamp: new Date().toISOString(),
+            correlationId: req.correlationId,
+            context: {
               queueStats: requestQueue.getStats()
             }
           }
@@ -410,7 +416,9 @@ export function createRouter(): RouterContext {
           error: {
             message: 'Request timed out waiting in queue',
             code: 'QUEUE_TIMEOUT',
-            details: {
+            timestamp: new Date().toISOString(),
+            correlationId: req.correlationId,
+            context: {
               queueStats: requestQueue.getStats()
             }
           }

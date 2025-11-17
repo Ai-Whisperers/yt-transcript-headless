@@ -47,7 +47,8 @@ export class TranscribePlaylistUseCase {
           error: {
             message: 'No videos found in playlist',
             code: 'EMPTY_PLAYLIST',
-            details: { playlistId: playlistInfo.playlistId }
+            timestamp: new Date().toISOString(),
+            context: { playlistId: playlistInfo.playlistId }
           }
         };
       }
@@ -183,7 +184,8 @@ export class TranscribePlaylistUseCase {
         error: {
           message: error.message || 'Failed to process playlist',
           code: 'PLAYLIST_EXTRACTION_FAILED',
-          details: { originalError: error.name }
+          timestamp: new Date().toISOString(),
+          context: { originalError: error.name }
         }
       };
     }

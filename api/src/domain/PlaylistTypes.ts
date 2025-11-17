@@ -9,6 +9,7 @@ export interface PlaylistRequest {
 export interface VideoTranscriptResult {
   videoId: string;
   videoUrl: string;
+  videoTitle?: string;         // Optional video title for display
   success: boolean;
   transcript?: TranscriptSegment[];
   error?: {
@@ -18,6 +19,10 @@ export interface VideoTranscriptResult {
   extractedAt?: string;
 }
 
+/**
+ * Response model for playlist extraction
+ * NOTE: This is the CANONICAL type - infrastructure MUST return this exact shape
+ */
 export interface PlaylistResponse {
   success: boolean;
   data?: {
@@ -35,6 +40,8 @@ export interface PlaylistResponse {
   error?: {
     message: string;
     code: string;
-    details?: any;
+    timestamp: string;           // ISO 8601 timestamp of when error occurred
+    correlationId?: string;      // Request correlation ID for tracing
+    context?: any;               // Optional additional error context
   };
 }
