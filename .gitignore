@@ -15,6 +15,7 @@ coverage/
 build/
 dist/
 out/
+api/public/
 
 # Environment variables
 .env
@@ -24,13 +25,15 @@ out/
 .env.production.local
 
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+api/logs/
+web/logs/
 
 # Editor directories and files
 .vscode/*
