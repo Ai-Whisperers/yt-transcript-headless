@@ -1,35 +1,61 @@
 import request from 'supertest';
 import express from 'express';
 import { createRouter } from '../../src/infrastructure/routes';
+import { MockYouTubeServer } from '../helpers/MockYouTubeServer';
+import { keepAliveWrapper, waitForQueueSettlement } from '../helpers/LongRunningRequestHelper';
 
 describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
   let app: express.Application;
+  let mockServer: MockYouTubeServer;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = express();
     app.use(express.json());
     const { router } = createRouter();
     app.use('/api', router);
+
+    // Start mock YouTube server
+    mockServer = new MockYouTubeServer(9999);
+    await mockServer.start();
+  });
+
+  afterAll(async () => {
+    await mockServer.stop();
+  });
+
+  beforeEach(() => {
+    mockServer.clearVideos();
   });
 
   describe('Parallel Request Handling', () => {
     it('should handle 10 parallel requests respecting queue limits', async () => {
       const videoIds = [
-        'dQw4w9WgXcQ', 'jNQXAC9IVRw', '9bZkp7q19f0', 'kJQP7kiw5Fk', 'OPf0YbXqDm0',
-        'RgKAFK5djSk', 'hT_nvWreIhg', 'L_jWHffIx5E', 'YQHsXMglC9A', 'dQw4w9WgXcQ'
+        'test1', 'test2', 'test3', 'test4', 'test5',
+        'test6', 'test7', 'test8', 'test9', 'test10'
       ];
+
+      // Register mock videos with fast responses
+      videoIds.forEach(videoId => {
+        mockServer.registerVideo({
+          videoId,
+          title: `Test Video ${videoId}`,
+          hasTranscript: true,
+          transcriptSegments: [
+            { time: '0:00', text: `Transcript for ${videoId}` }
+          ],
+          responseDelay: 100 // Fast mock responses
+        });
+      });
 
       const startTime = Date.now();
 
-      // Send 10 parallel requests
+      // Send 10 parallel requests with keep-alive
       const requests = videoIds.map(videoId =>
-        request(app)
-          .post('/api/transcribe')
+        keepAliveWrapper(request(app).post('/api/transcribe'))
           .send({
-            url: `https://www.youtube.com/watch?v=${videoId}`,
+            url: `${mockServer.getBaseUrl()}/watch?v=${videoId}`,
             format: 'json'
           })
-          .timeout(120000) // 2 minute timeout for all 10
       );
 
       // Wait for all to complete
@@ -44,38 +70,48 @@ describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
       console.log(`10 parallel requests completed in ${duration}ms`);
       console.log(`Successes: ${successes}, Failures: ${failures}`);
 
-      // At least some requests should succeed
-      expect(successes).toBeGreaterThan(0);
+      // All requests should succeed with mock server
+      expect(successes).toBe(10);
+      expect(failures).toBe(0);
 
       // Total requests should be 10
       expect(results.length).toBe(10);
 
-      // Duration should indicate queuing (not all ran simultaneously)
-      // With max concurrency of 3-5, should take longer than single request
-      expect(duration).toBeGreaterThan(30000); // > 30 seconds indicates queuing
-    }, 180000); // 3 minute test timeout
+      // Duration should indicate queuing (max concurrency is 3)
+      // 10 requests / 3 concurrent = at least 4 batches
+      // Each batch ~100ms delay + processing overhead
+      expect(duration).toBeGreaterThan(300); // At least 3 batches
+    }, 30000); // 30 second timeout (much faster with mocks)
   });
 
   describe('Queue Metrics During Load', () => {
     it('should track queue stats accurately under load', async () => {
+      // Register slow mock video to keep queue full
+      mockServer.registerVideo({
+        videoId: 'slow1',
+        title: 'Slow Video',
+        hasTranscript: true,
+        transcriptSegments: [{ time: '0:00', text: 'Slow transcript' }],
+        responseDelay: 2000 // 2 second delay to fill queue
+      });
+
       // Start 5 parallel long-running requests
       const requests = Array.from({ length: 5 }, () =>
-        request(app)
-          .post('/api/transcribe')
+        keepAliveWrapper(request(app).post('/api/transcribe'))
           .send({
-            url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+            url: `${mockServer.getBaseUrl()}/watch?v=slow1`,
             format: 'json'
           })
       );
 
-      // Wait a bit for queue to fill
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait for queue to fill
+      await waitForQueueSettlement(1000);
 
       // Check metrics while requests are running
       const metricsResponse = await request(app).get('/api/metrics');
       expect(metricsResponse.status).toBe(200);
 
-      const metrics = metricsResponse.body;
+      const metrics = metricsResponse.body.data;
 
       // Should have active or pending requests
       const totalInFlight = metrics.queue.active + metrics.queue.pending;
@@ -87,43 +123,69 @@ describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
 
       // Final metrics should show completions
       const finalMetrics = await request(app).get('/api/metrics');
-      expect(finalMetrics.body.queue.completed).toBeGreaterThan(0);
-    }, 90000);
+      expect(finalMetrics.body.data.queue.completed).toBeGreaterThan(0);
+    }, 30000); // 30 second timeout
   });
 
   describe('Queue Capacity Limits', () => {
     it('should reject requests when queue is full', async () => {
       // QUEUE_MAX_SIZE defaults to 100, QUEUE_MAX_CONCURRENT defaults to 3
-      // We need to send enough requests to fill the queue
+      // Register very slow video to block queue
+      mockServer.registerVideo({
+        videoId: 'veryslow',
+        title: 'Very Slow Video',
+        hasTranscript: true,
+        transcriptSegments: [{ time: '0:00', text: 'Very slow' }],
+        responseDelay: 10000 // 10 second delay to block queue
+      });
 
+      // Fire 110 requests rapidly
       const requests = Array.from({ length: 110 }, () =>
-        request(app)
-          .post('/api/transcribe')
+        keepAliveWrapper(request(app).post('/api/transcribe'))
+          .timeout(15000)
           .send({
-            url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+            url: `${mockServer.getBaseUrl()}/watch?v=veryslow`,
             format: 'json'
           })
-          .timeout(10000)
+          .catch(err => err) // Capture errors for analysis
       );
 
       const results = await Promise.allSettled(requests);
 
-      // Some should succeed, some should fail with 503 (queue full)
-      const successes = results.filter(r => r.status === 'fulfilled');
-      const queueFullErrors = results.filter(r =>
-        r.status === 'rejected' &&
-        r.reason.message?.includes('503')
-      );
+      // Check for 503 queue full responses
+      const queueFullErrors = results.filter(r => {
+        if (r.status === 'fulfilled' && r.value.response) {
+          return r.value.response.status === 503;
+        }
+        if (r.status === 'fulfilled' && r.value.status) {
+          return r.value.status === 503;
+        }
+        if (r.status === 'rejected' && r.reason.response) {
+          return r.reason.response.status === 503;
+        }
+        return false;
+      });
 
-      console.log(`Queue capacity test: ${successes.length} succeeded, ${queueFullErrors.length} rejected (503)`);
+      console.log(`Queue capacity test: ${queueFullErrors.length} rejected with 503 (queue full)`);
 
       // Should have some queue full rejections
       expect(queueFullErrors.length).toBeGreaterThan(0);
-    }, 180000);
+    }, 60000); // 60 second timeout
   });
 
   describe('FIFO Queue Ordering', () => {
     it('should process requests in order when queue is used', async () => {
+      // Register videos with unique IDs
+      for (let i = 0; i < 5; i++) {
+        mockServer.registerVideo({
+          videoId: `fifo${i}`,
+          title: `FIFO Test ${i}`,
+          hasTranscript: true,
+          transcriptSegments: [{ time: '0:00', text: `Transcript ${i}` }],
+          responseDelay: 200 // Consistent delay
+        });
+      }
+
       const timestamps: { id: number; startTime: number; endTime: number }[] = [];
 
       // Send 5 requests sequentially with tracking
@@ -131,10 +193,9 @@ describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
         const startTime = Date.now();
 
         try {
-          await request(app)
-            .post('/api/transcribe')
+          await keepAliveWrapper(request(app).post('/api/transcribe'))
             .send({
-              url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+              url: `${mockServer.getBaseUrl()}/watch?v=fifo${i}`,
               format: 'json'
             });
 
@@ -146,7 +207,6 @@ describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
       }
 
       // Verify ordering: requests should complete in approximately FIFO order
-      // (allowing for some variance due to extraction time differences)
       for (let i = 1; i < timestamps.length; i++) {
         const prev = timestamps[i - 1];
         const curr = timestamps[i];
@@ -156,6 +216,6 @@ describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
       }
 
       console.log('Request completion order:', timestamps);
-    }, 300000); // 5 minute timeout for sequential execution
+    }, 60000); // 60 second timeout for sequential execution
   });
 });
