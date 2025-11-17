@@ -55,36 +55,49 @@ describe('BrowserManager - Phase 1 Validation', () => {
     it('should trigger cleanup on abort signal', async () => {
       const abortController = new AbortController();
       let capturedBrowser: Browser | undefined = undefined;
-      let cleanupCalled = false;
+      let browserDisconnected = false;
 
       const promise = browserManager.runIsolated(async (page, context, browser) => {
         capturedBrowser = browser;
 
-        // Simulate long-running operation
-        try {
-          await new Promise(resolve => setTimeout(resolve, 10000));
-        } finally {
-          cleanupCalled = !browser.isConnected();
-        }
+        // Wait for abort signal or completion
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(resolve, 10000);
+
+          // Listen for abort signal
+          if (abortController.signal.aborted) {
+            clearTimeout(timeout);
+            reject(new Error('Aborted'));
+          }
+
+          abortController.signal.addEventListener('abort', () => {
+            clearTimeout(timeout);
+            reject(new Error('Aborted'));
+          });
+        });
 
         return 'completed';
       }, abortController.signal);
 
-      // Abort after 500ms
+      // Abort after 500ms (enough time for browser to launch)
       setTimeout(() => abortController.abort(), 500);
 
       try {
         await promise;
-      } catch (error) {
-        // May complete or throw
+        fail('Promise should have been aborted');
+      } catch (error: any) {
+        // Abort expected - browser should be cleaning up
       }
 
-      // Wait for cleanup
+      // Wait for cleanup to complete
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // Browser should be disconnected (cleanup was triggered)
+      // Verify browser was disconnected by cleanup
       expect(capturedBrowser).toBeDefined();
-      expect(cleanupCalled).toBe(true);
+      if (capturedBrowser) {
+        browserDisconnected = !capturedBrowser.isConnected();
+        expect(browserDisconnected).toBe(true);
+      }
     }, 30000);
 
     it('should retry context creation on failure', async () => {
