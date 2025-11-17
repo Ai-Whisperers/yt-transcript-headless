@@ -57,6 +57,7 @@ export interface VideoTranscriptResult {
     message: string;
     code: string;
   };
+  extractedAt?: string; // Added to match backend canonical type
 }
 
 export interface PlaylistResponse {
@@ -84,17 +85,22 @@ export interface PlaylistResponse {
 export interface HealthResponse {
   status: string;
   timestamp: string;
+  service: string; // Backend canonical field
   uptime: number;
   memory: {
-    used: number;
-    total: number;
-    percentage: number;
+    raw: NodeJS.MemoryUsage; // Backend canonical field
+    heapUsedMB: number; // Backend canonical field
+    heapTotalMB: number; // Backend canonical field
+    externalMB: number; // Backend canonical field
+    rssMB: number; // Backend canonical field
+    usagePercent: number; // Backend canonical field (not 'percentage')
   };
   queue: {
     pending: number;
     active: number;
     completed: number;
     failed: number;
+    totalProcessed: number; // Backend canonical field
     queueSize: number;
   };
   correlationId: string;

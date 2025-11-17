@@ -25,7 +25,7 @@ export function Header({ health }: HeaderProps) {
             )}
             <span className="health-details">
               {APP_TEXT.STATUS_UPTIME}: {Math.floor(health.uptime)}s |{' '}
-              {APP_TEXT.STATUS_MEMORY}: {health.memory?.percentage?.toFixed(1) || 0}%
+              {APP_TEXT.STATUS_MEMORY}: {health.memory?.usagePercent?.toFixed(1) || 0}%
             </span>
           </div>
         )}

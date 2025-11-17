@@ -197,9 +197,17 @@ describe('TranscriptAPI', () => {
       const mockHealthData = {
         status: 'healthy',
         timestamp: new Date().toISOString(),
+        service: 'yt-transcript-api',
         uptime: 12345,
-        memory: { used: 100, total: 1000, percentage: 10 },
-        queue: { pending: 0, active: 0, completed: 10, failed: 0, queueSize: 0 },
+        memory: {
+          raw: { rss: 100000000, heapTotal: 50000000, heapUsed: 40000000, external: 1000000, arrayBuffers: 500000 },
+          heapUsedMB: 38.15,
+          heapTotalMB: 47.68,
+          externalMB: 0.95,
+          rssMB: 95.37,
+          usagePercent: 10.5
+        },
+        queue: { pending: 0, active: 0, completed: 10, failed: 0, totalProcessed: 10, queueSize: 0 },
         correlationId: 'test-id'
       };
 
