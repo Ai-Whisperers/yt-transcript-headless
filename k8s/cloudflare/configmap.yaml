@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: cloudflare-tunnel
+  labels:
+    app: cloudflared
+data:
+  config.yaml: |
+    # Cloudflare Tunnel Configuration
+    # Replace <TUNNEL_ID> with your actual tunnel ID from Cloudflare dashboard
+
+    tunnel: <TUNNEL_ID>
+    credentials-file: /etc/cloudflared/creds/credentials.json
+
+    # Metrics endpoint for monitoring
+    metrics: 0.0.0.0:2000
+
+    # Protocol optimization
+    protocol: quic
+
+    # Connection settings
+    retries: 5
+    grace-period: 30s
+
+    # Ingress rules - maps public hostnames to internal Kubernetes services
+    ingress:
+      # YouTube Transcript API
+      - hostname: transcript.yourdomain.com
+        service: http://yt-transcript-api.yt-transcript.svc.cluster.local:80
+        originRequest:
+          connectTimeout: 30s
+          noTLSVerify: false
+
+      # Excel Parser API (optional - uncomment to enable)
+      # - hostname: excel.yourdomain.com
+      #   service: http://excel-parser-service.excel-parser.svc.cluster.local:80
+      #   originRequest:
+      #     connectTimeout: 30s
+      #     noTLSVerify: false
+
+      # Catch-all rule (required as last rule)
+      - service: http_status:404
+
+    # Logging
+    loglevel: info
+
+---
+# Instructions for configuration:
+#
+# 1. Get Tunnel ID:
+#    cloudflared tunnel create <tunnel-name>
+#    # Save the tunnel ID from output
+#
+# 2. Replace placeholders:
+#    - <TUNNEL_ID> with your actual tunnel ID
+#    - yourdomain.com with your actual domain
+#
+# 3. Apply ConfigMap:
+#    kubectl apply -f configmap.yaml
+#
+# For detailed setup instructions, see:
+# docs/CLOUDFLARE-SETUP.md
