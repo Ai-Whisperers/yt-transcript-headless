@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config-scale-to-zero
+  namespace: cloudflare-tunnel
+  labels:
+    app: cloudflared
+    variant: scale-to-zero
+data:
+  config.yaml: |
+    # Cloudflare Tunnel Configuration - Scale-to-Zero Variant
+    # Frontend: Always-on | API: Scale to zero when idle
+    #
+    # Architecture:
+    # - transcript.yourdomain.com → Frontend (nginx, always-on, instant load)
+    # - api.yourdomain.com → KEDA HTTP Interceptor → API (scale 0-N, on-demand)
+
+    tunnel: <TUNNEL_ID>
+    credentials-file: /etc/cloudflared/creds/credentials.json
+
+    # Metrics endpoint for monitoring
+    metrics: 0.0.0.0:2000
+
+    # Protocol optimization
+    protocol: quic
+
+    # Connection settings
+    retries: 5
+    grace-period: 30s
+
+    # Ingress rules - hostname-based routing
+    ingress:
+      # Frontend (always available, instant page load)
+      - hostname: transcript.yourdomain.com
+        service: http://yt-transcript-frontend.yt-transcript.svc.cluster.local:80
+        originRequest:
+          connectTimeout: 10s
+          noTLSVerify: false
+
+      # API (scale-to-zero via KEDA HTTP Add-on)
+      - hostname: api.yourdomain.com
+        service: http://keda-add-ons-http-interceptor-proxy.keda:8080
+        originRequest:
+          connectTimeout: 60s  # Allow time for cold start (0→1 pods)
+          noTLSVerify: false
+
+      # Excel Parser API (optional - scale-to-zero)
+      # - hostname: excel-api.yourdomain.com
+      #   service: http://keda-add-ons-http-interceptor-proxy.keda:8080
+      #   originRequest:
+      #     connectTimeout: 60s
+      #     noTLSVerify: false
+
+      # Catch-all rule (required as last rule)
+      - service: http_status:404
+
+    # Logging
+    loglevel: info
+
+---
+# Instructions for configuration:
+#
+# 1. Prerequisites:
+#    - KEDA installed: helm install keda kedacore/keda --namespace keda
+#    - KEDA HTTP Add-on: helm install http-add-on kedacore/keda-add-ons-http --namespace keda
+#    - HTTPScaledObject deployed: kubectl apply -f k8s/keda/httpscaledobject.yaml
+#
+# 2. DNS Configuration:
+#    cloudflared tunnel route dns <tunnel-name> transcript.yourdomain.com
+#    cloudflared tunnel route dns <tunnel-name> api.yourdomain.com
+#
+# 3. Replace placeholders:
+#    - <TUNNEL_ID> with actual tunnel ID
+#    - yourdomain.com with your domain
+#
+# 4. Apply ConfigMap:
+#    kubectl delete configmap cloudflared-config -n cloudflare-tunnel
+#    kubectl create configmap cloudflared-config \
+#      --from-file=config.yaml=<(kubectl get cm cloudflared-config-scale-to-zero -n cloudflare-tunnel -o jsonpath='{.data.config\.yaml}') \
+#      -n cloudflare-tunnel
+#
+# 5. Restart cloudflared:
+#    kubectl rollout restart deployment/cloudflared -n cloudflare-tunnel
+#
+# 6. Update frontend API calls:
+#    - Update web/.env or vite config
+#    - VITE_API_URL=https://api.yourdomain.com
+#    - Rebuild frontend: cd web && npm run build
+#
+# Architecture Benefits:
+# - Frontend: Instant page load (nginx, 50MB RAM, always-on)
+# - API: 80-90% resource savings (scale to 0 when idle)
+# - Cold start: 2-5 seconds (acceptable for API calls)
+# - Transparent to users (KEDA queues requests during scale-up)
+#
+# For detailed setup guide, see:
+# docs/SCALE-TO-ZERO-SETUP.md
