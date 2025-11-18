@@ -36,6 +36,19 @@
   --color-text-secondary: #a0b3cc;
   --color-text-tertiary: #7589a3;
   --color-text-disabled: #556b85;
+  --color-text-gray: #556b85;
+  --color-text-muted: #a0b3cc;
+
+  /* Status colors */
+  --color-success: #66bb6a;
+  --color-success-bg: rgba(102, 187, 106, 0.1);
+  --color-success-border: rgba(102, 187, 106, 0.3);
+  --color-error: #ef5350;
+  --color-error-bg: rgba(239, 83, 80, 0.1);
+  --color-error-border: rgba(239, 83, 80, 0.3);
+  --color-warning: #ffb74d;
+  --color-warning-bg: rgba(255, 183, 77, 0.1);
+  --color-warning-border: rgba(255, 183, 77, 0.3);
 
   /* ========== GRADIENTS ========== */
   --gradient-steel: linear-gradient(135deg, #1a222d 0%, #0a0e14 100%);
@@ -91,6 +104,21 @@
   --space-2xl: 48px;
   --space-3xl: 64px;
   --space-4xl: 96px;
+
+  /* Layout sizing */
+  --size-container-max: 1200px;
+  --size-transcript-max-height: 500px;
+  --size-segment-time-min: 60px;
+  --size-input-number-width: 100px;
+  --size-ripple: 300px;
+  --size-spinner: 1rem;
+
+  /* Border radius variations */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 
   /* ========== TYPOGRAPHY ========== */
   --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

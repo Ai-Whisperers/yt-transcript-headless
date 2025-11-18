@@ -51,7 +51,7 @@ export const APP_TEXT = {
   RESULT_NO_TITLE: 'No title',
 
   // Footer
-  FOOTER_TEXT: '© 2024 YouTube Transcript Extractor API',
+  FOOTER_TEXT: '© 2025 YouTube Transcript Extractor API',
 
   // Errors (fallback - detailed errors come from error utility)
   ERROR_GENERIC: 'An error occurred. Please try again.',

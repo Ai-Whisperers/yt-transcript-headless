@@ -87,7 +87,7 @@ function VideoCard({ video, expanded, onToggle }: VideoCardProps) {
           </button>
 
           {expanded && (
-            <div className="transcript-content" style={{ marginTop: '1rem' }}>
+            <div className="transcript-content">
               {video.transcript.map((segment, index) => (
                 <div key={index} className="transcript-segment">
                   <span className="segment-time">{segment.time}</span>
