@@ -1,0 +1,93 @@
+apiVersion: keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: yt-transcript-api
+  namespace: yt-transcript
+  labels:
+    app: yt-transcript-api
+spec:
+  # Target deployment to scale
+  scaleTargetRef:
+    name: yt-transcript-api
+    kind: Deployment
+    service: yt-transcript-api
+    port: 3000
+
+  # Scaling boundaries
+  replicas:
+    min: 0  # Scale to zero when idle
+    max: 10  # Maximum pods under load
+
+  # Scaling metrics
+  targetPendingRequests: 10  # Target 10 requests per pod
+
+  # Timing parameters
+  cooldownPeriod: 60  # Seconds of idle time before scale-down
+  scaledownPeriod: 120  # Minimum 2 minutes between scale-downs
+
+  # Host configuration
+  hosts:
+  - transcript.yourdomain.com
+
+  # Path prefix for routing
+  pathPrefixes:
+  - /api
+
+---
+# Alternative: ScaledObject with Prometheus metrics (if HTTP Add-on not used)
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: yt-transcript-api-prometheus
+  namespace: yt-transcript
+  labels:
+    app: yt-transcript-api
+spec:
+  scaleTargetRef:
+    name: yt-transcript-api
+
+  minReplicaCount: 0  # Scale to zero
+  maxReplicaCount: 10
+
+  cooldownPeriod: 60
+  pollingInterval: 15
+
+  triggers:
+  # Scale based on HTTP request rate (requires metrics server)
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus.monitoring.svc.cluster.local:9090
+      metricName: http_requests_total
+      threshold: '10'
+      query: |
+        sum(rate(http_requests_total{namespace="yt-transcript",service="yt-transcript-api"}[1m]))
+
+---
+# Instructions:
+#
+# This file provides TWO scaling options:
+#
+# 1. HTTPScaledObject (Recommended):
+#    - Uses KEDA HTTP Add-on
+#    - Queues requests during scale-from-zero
+#    - No lost requests
+#    - Requires: helm install http-add-on kedacore/keda-add-ons-http
+#
+# 2. ScaledObject with Prometheus:
+#    - Uses custom metrics
+#    - Requires Prometheus installed
+#    - May lose requests during scale-up
+#    - Backup option if HTTP Add-on not available
+#
+# Deploy ONE of these (not both):
+#
+# For HTTP Add-on:
+#   kubectl apply -f httpscaledobject.yaml (first section only)
+#
+# For Prometheus:
+#   kubectl apply -f httpscaledobject.yaml (second section only)
+#
+# Verify:
+#   kubectl get httpscaledobject -n yt-transcript
+#   # OR
+#   kubectl get scaledobject -n yt-transcript
