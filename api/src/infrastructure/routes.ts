@@ -238,14 +238,8 @@ export function createRouter(): RouterContext {
 
         const extractionResult = await transcribeUseCase.execute(request, abortController.signal);
 
-        // Check if request was aborted
-        if (abortController.signal.aborted) {
-          logger.info('Request aborted during extraction', {
-            correlationId: req.correlationId
-          });
-          throw new Error('Request aborted');
-        }
-
+        // If extraction succeeded, return result even if client disconnected
+        // The abort signal is handled by BrowserManager during extraction
         return extractionResult;
       });
 
@@ -373,14 +367,8 @@ export function createRouter(): RouterContext {
 
         const playlistResult = await transcribePlaylistUseCase.execute(request, abortController.signal);
 
-        // Check if request was aborted
-        if (abortController.signal.aborted) {
-          logger.info('Playlist request aborted during extraction', {
-            correlationId: req.correlationId
-          });
-          throw new Error('Request aborted');
-        }
-
+        // If extraction succeeded, return result even if client disconnected
+        // The abort signal is handled by BrowserManager during extraction
         return playlistResult;
       });
 
