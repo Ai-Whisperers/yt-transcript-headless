@@ -1,0 +1,233 @@
+/**
+ * Cursor Effects
+ * Interactive cursor effects for Web3.0 experience
+ */
+
+/* ========== CUSTOM CURSOR ========== */
+.custom-cursor {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10000;
+  mix-blend-mode: difference;
+}
+
+.cursor-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.2s ease, height 0.2s ease, background 0.2s ease;
+}
+
+.cursor-ring {
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--accent-primary);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              height 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              border-color 0.2s ease;
+  opacity: 0.5;
+}
+
+/* Cursor states */
+.cursor-hover .cursor-dot {
+  width: 16px;
+  height: 16px;
+  background: var(--accent-secondary);
+}
+
+.cursor-hover .cursor-ring {
+  width: 48px;
+  height: 48px;
+  border-color: var(--accent-secondary);
+  opacity: 0.8;
+}
+
+.cursor-click .cursor-dot {
+  width: 12px;
+  height: 12px;
+  background: var(--accent-warning);
+}
+
+.cursor-click .cursor-ring {
+  width: 64px;
+  height: 64px;
+  border-color: var(--accent-warning);
+  opacity: 0.3;
+}
+
+/* ========== CURSOR GLOW TRAIL ========== */
+.cursor-glow {
+  position: fixed;
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(100, 181, 246, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 9998;
+  mix-blend-mode: screen;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+body:hover .cursor-glow {
+  opacity: 1;
+}
+
+/* ========== INTERACTIVE ELEMENT STYLES ========== */
+.cursor-interactive {
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.cursor-interactive::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(100, 181, 246, 0.2) 0%, transparent 70%);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s ease, height 0.6s ease;
+  pointer-events: none;
+}
+
+.cursor-interactive:hover::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* ========== MAGNETIC CURSOR EFFECT ========== */
+.magnetic {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
+}
+
+.magnetic.is-attracted {
+  transform: translate(var(--tx, 0), var(--ty, 0));
+}
+
+/* ========== RIPPLE EFFECT ========== */
+.ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple-effect {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(100, 181, 246, 0.3);
+  transform: scale(0);
+  animation: ripple-animation 0.6s ease-out;
+  pointer-events: none;
+}
+
+@keyframes ripple-animation {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+/* ========== CURSOR SPOTLIGHT ========== */
+.spotlight-container {
+  position: relative;
+}
+
+.spotlight-effect {
+  position: fixed;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(100, 181, 246, 0.08) 0%, transparent 60%);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  mix-blend-mode: screen;
+  transition: opacity 0.5s ease;
+}
+
+/* ========== TEXT HIGHLIGHT ON CURSOR ========== */
+.text-highlight-cursor {
+  background: linear-gradient(
+    90deg,
+    var(--color-text-primary) 0%,
+    var(--accent-primary) 50%,
+    var(--color-text-primary) 100%
+  );
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  transition: background-position 0.3s ease;
+}
+
+.text-highlight-cursor:hover {
+  background-position: 100% center;
+}
+
+/* ========== PARTICLE CURSOR TRAIL ========== */
+.cursor-particle {
+  position: fixed;
+  width: 4px;
+  height: 4px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  animation: particle-fade 0.8s ease-out forwards;
+}
+
+@keyframes particle-fade {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0);
+  }
+}
+
+/* ========== HOVER GLOW EFFECT ========== */
+.hover-glow {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.hover-glow::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: var(--gradient-accent);
+  border-radius: inherit;
+  opacity: 0;
+  z-index: -1;
+  filter: blur(10px);
+  transition: opacity 0.3s ease;
+}
+
+.hover-glow:hover::after {
+  opacity: 0.3;
+}
+
+/* ========== CURSOR DISABLE DEFAULT ========== */
+.no-cursor * {
+  cursor: none !important;
+}
+
+/* Show default cursor on interactive elements when custom cursor is disabled */
+@media (pointer: coarse) {
+  .custom-cursor,
+  .cursor-glow {
+    display: none;
+  }
+}

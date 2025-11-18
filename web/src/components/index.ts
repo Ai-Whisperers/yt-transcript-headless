@@ -12,3 +12,5 @@ export { ErrorDisplay } from './ErrorDisplay';
 export { TranscriptResult } from './TranscriptResult';
 export { PlaylistResult } from './PlaylistResult';
 export { Loading } from './Loading';
+export { CursorEffects } from './CursorEffects';
+export { ScrollProgress } from './ScrollProgress';

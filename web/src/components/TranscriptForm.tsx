@@ -49,7 +49,7 @@ export function TranscriptForm({
           disabled={loading}
           required
         />
-        <button type="submit" className="button" disabled={loading}>
+        <button type="submit" className="button cursor-interactive ripple" disabled={loading}>
           {loading ? APP_TEXT.BUTTON_EXTRACTING : APP_TEXT.BUTTON_EXTRACT}
         </button>
       </div>

@@ -25,7 +25,9 @@ import {
   ErrorDisplay,
   TranscriptResult,
   PlaylistResult,
-  Loading
+  Loading,
+  CursorEffects,
+  ScrollProgress
 } from './components';
 
 function App() {
@@ -98,7 +100,7 @@ function App() {
     setLoading(false);
   };
 
-  const handleModeChange = (newMode: 'single' | 'playlist') => {
+  const handleModeChange = (newMode: 'single' | 'playlist'): void => {
     setMode(newMode);
     setUrl('');
     setError(null);
@@ -107,7 +109,7 @@ function App() {
   };
 
   // ========== UTILITY FUNCTIONS ==========
-  const downloadTranscript = () => {
+  const downloadTranscript = (): void => {
     if (!result) return;
 
     let content = '';
@@ -142,7 +144,7 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  const copyToClipboard = () => {
+  const copyToClipboard = (): void => {
     if (!result) return;
 
     let content = '';
@@ -160,6 +162,8 @@ function App() {
   // ========== RENDER ==========
   return (
     <>
+      <CursorEffects enableCustomCursor={true} enableGlow={true} enableParticles={false} />
+      <ScrollProgress enabled={true} />
       <Header health={health} />
 
       <main className="main">

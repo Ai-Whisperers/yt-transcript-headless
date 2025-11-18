@@ -80,7 +80,7 @@ function VideoCard({ video, expanded, onToggle }: VideoCardProps) {
       {video.success && video.transcript && (
         <>
           <button
-            className="button-secondary"
+            className="button-secondary cursor-interactive ripple"
             onClick={onToggle}
           >
             {expanded ? APP_TEXT.BUTTON_HIDE_TRANSCRIPT : APP_TEXT.BUTTON_VIEW_TRANSCRIPT}

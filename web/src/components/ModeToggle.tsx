@@ -15,14 +15,14 @@ export function ModeToggle({ mode, onModeChange }: ModeToggleProps) {
   return (
     <div className="mode-toggle">
       <button
-        className={`button ${mode === 'single' ? '' : 'button-secondary'}`}
+        className={`button ${mode === 'single' ? '' : 'button-secondary'} cursor-interactive ripple`}
         onClick={() => onModeChange('single')}
         type="button"
       >
         {APP_TEXT.MODE_SINGLE}
       </button>
       <button
-        className={`button ${mode === 'playlist' ? '' : 'button-secondary'}`}
+        className={`button ${mode === 'playlist' ? '' : 'button-secondary'} cursor-interactive ripple`}
         onClick={() => onModeChange('playlist')}
         type="button"
       >

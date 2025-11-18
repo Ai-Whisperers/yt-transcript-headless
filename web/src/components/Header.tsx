@@ -6,14 +6,22 @@
 
 import { APP_TEXT } from '../constants/text';
 import { HealthResponse } from '../services/api';
+import { useScrollEffects } from '../hooks/useScrollEffects';
 
 interface HeaderProps {
   health: HealthResponse | null;
 }
 
 export function Header({ health }: HeaderProps) {
+  const { isScrolled } = useScrollEffects({
+    enableReveal: false,
+    enableParallax: false,
+    enableProgressBar: false,
+    enableStickyHeader: true
+  });
+
   return (
-    <header className="header">
+    <header className={`header ${isScrolled ? 'is-scrolled' : ''}`}>
       <div className="container">
         <h1>{APP_TEXT.TITLE}</h1>
         {health && (

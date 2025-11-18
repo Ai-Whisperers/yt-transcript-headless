@@ -19,10 +19,10 @@ export function TranscriptResult({ result, onCopy, onDownload }: TranscriptResul
       <div className="result-header">
         <h2>{APP_TEXT.RESULT_TITLE_SINGLE}</h2>
         <div className="action-buttons">
-          <button className="button-secondary" onClick={onCopy}>
+          <button className="button-secondary cursor-interactive ripple" onClick={onCopy}>
             {APP_TEXT.BUTTON_COPY}
           </button>
-          <button className="button-secondary" onClick={onDownload}>
+          <button className="button-secondary cursor-interactive ripple" onClick={onDownload}>
             {APP_TEXT.BUTTON_DOWNLOAD}
           </button>
         </div>
