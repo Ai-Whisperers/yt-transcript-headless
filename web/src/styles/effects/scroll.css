@@ -82,7 +82,7 @@ html {
   width: 100%;
   height: 3px;
   background: var(--gradient-steel);
-  z-index: 9999;
+  z-index: 1000; /* Below cursor effects (9998-10000), above content */
 }
 
 .scroll-progress-bar {
