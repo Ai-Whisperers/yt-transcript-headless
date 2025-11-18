@@ -1,0 +1,142 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: cloudflare-tunnel
+  labels:
+    app: cloudflared
+spec:
+  replicas: 2  # High availability with 2 tunnels
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero-downtime updates
+
+  selector:
+    matchLabels:
+      app: cloudflared
+
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "2000"
+        prometheus.io/path: "/metrics"
+
+    spec:
+      serviceAccountName: cloudflared
+
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532  # nonroot user
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+      - name: cloudflared
+        image: cloudflare/cloudflared:latest
+        imagePullPolicy: Always
+
+        args:
+        - tunnel
+        - --config
+        - /etc/cloudflared/config/config.yaml
+        - run
+
+        # Liveness probe - check if tunnel is running
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: 2000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Readiness probe - check if tunnel is connected
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 2000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+
+        # Resource limits
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+
+        # Security context
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+
+        # Volume mounts
+        volumeMounts:
+        - name: config
+          mountPath: /etc/cloudflared/config
+          readOnly: true
+        - name: creds
+          mountPath: /etc/cloudflared/creds
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+
+      # Volumes
+      volumes:
+      - name: config
+        configMap:
+          name: cloudflared-config
+          items:
+          - key: config.yaml
+            path: config.yaml
+      - name: creds
+        secret:
+          secretName: cloudflared-credentials
+          items:
+          - key: credentials.json
+            path: credentials.json
+      - name: tmp
+        emptyDir: {}
+
+      # Pod disruption budget compatibility
+      terminationGracePeriodSeconds: 30
+
+---
+# Metrics Service (optional - for Prometheus monitoring)
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudflared-metrics
+  namespace: cloudflare-tunnel
+  labels:
+    app: cloudflared
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "2000"
+spec:
+  type: ClusterIP
+  selector:
+    app: cloudflared
+  ports:
+  - name: metrics
+    port: 2000
+    targetPort: 2000
+    protocol: TCP
