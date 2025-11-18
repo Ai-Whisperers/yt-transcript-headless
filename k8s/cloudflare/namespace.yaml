@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudflare-tunnel
+  labels:
+    name: cloudflare-tunnel
+    purpose: secure-ingress
+    managed-by: kubectl
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: cloudflare-tunnel-quota
+  namespace: cloudflare-tunnel
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 512Mi
+    limits.cpu: "2"
+    limits.memory: 1Gi
+    persistentvolumeclaims: "0"
+    pods: "5"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: cloudflare-tunnel-limits
+  namespace: cloudflare-tunnel
+spec:
+  limits:
+  - max:
+      cpu: "1"
+      memory: 512Mi
+    min:
+      cpu: "50m"
+      memory: 64Mi
+    default:
+      cpu: 500m
+      memory: 256Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+    type: Container
