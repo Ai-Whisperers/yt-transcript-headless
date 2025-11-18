@@ -20,15 +20,6 @@ export type {
 
 export { TranscriptFormat } from '../services/api';
 
-// Re-export design token types
-export type {
-  ColorToken,
-  GlassmorphismToken,
-  SpacingToken,
-  TypographyToken,
-  AnimationToken
-} from '../styles/tokens';
-
 // Component-specific types
 export interface BaseComponentProps {
   className?: string;
