@@ -132,28 +132,12 @@ body {
   box-shadow: 0 0 20px rgba(100, 181, 246, 0.3);
 }
 
-.button::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  transform: translate(-50%, -50%);
-  transition: width 0.6s ease, height 0.6s ease;
-}
+/* Note: Ripple effect handled by .cursor-interactive::before (see cursor.css) */
 
 .button:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 0 30px rgba(100, 181, 246, 0.5);
   border-color: var(--accent-primary-dark);
-}
-
-.button:hover:not(:disabled)::before {
-  width: var(--size-ripple);
-  height: var(--size-ripple);
 }
 
 .button:active:not(:disabled) {
@@ -538,20 +522,8 @@ body {
 }
 
 /* ========== INTERACTIVE ELEMENT ENHANCEMENTS ========== */
-button,
-a,
-.cursor-interactive {
-  position: relative;
-  overflow: hidden;
-}
-
-/* Add ripple effect to all buttons */
-.button,
-.button-secondary {
-  overflow: hidden;
-}
-
-/* Make interactive elements have smooth transitions */
+/* Note: Specific button classes (.button, .button-secondary) already have position/overflow set */
+/* Interactive elements have smooth transitions */
 button,
 a,
 input,
@@ -569,10 +541,10 @@ select:focus-visible {
 }
 
 /* ========== SCROLL REVEAL CLASSES ========== */
+/* Sections animate in on mount - animation keyframe handles opacity transition */
 .input-section,
 .result-section,
 .video-card {
-  opacity: 0;
   animation: slideUp var(--duration-normal) var(--ease-in-out) forwards;
 }
 
