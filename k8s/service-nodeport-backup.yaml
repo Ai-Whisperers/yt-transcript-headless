@@ -5,19 +5,16 @@ metadata:
   namespace: yt-transcript
   labels:
     app: yt-transcript-api
-  annotations:
-    # Cloudflare Tunnel access
-    cloudflare.io/tunnel: "true"
-    cloudflare.io/hostname: "transcript.yourdomain.com"
 spec:
-  type: ClusterIP  # Internal service exposed via Cloudflare Tunnel
+  type: NodePort  # On-premise deployment with persistent URL access
   sessionAffinity: None
   selector:
     app: yt-transcript-api
   ports:
   - name: http
-    port: 80          # Service port (accessed by cloudflared)
+    port: 80          # Service port
     targetPort: 3000  # Container port
+    nodePort: 30100   # External access port (API services range: 30100-30199)
     protocol: TCP
 ---
 # Internal ClusterIP service for cross-namespace communication
