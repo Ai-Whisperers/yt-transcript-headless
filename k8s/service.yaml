@@ -5,21 +5,38 @@ metadata:
   namespace: yt-transcript
   labels:
     app: yt-transcript-api
-  annotations:
-    service.beta.kubernetes.io/aws-load-balancer-type: nlb  # AWS Network Load Balancer
-    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
 spec:
-  type: ClusterIP  # Internal service (exposed via Ingress)
+  type: NodePort  # On-premise deployment with persistent URL access
+  sessionAffinity: None
+  selector:
+    app: yt-transcript-api
+  ports:
+  - name: http
+    port: 80          # Service port
+    targetPort: 3000  # Container port
+    nodePort: 30100   # External access port (API services range: 30100-30199)
+    protocol: TCP
+---
+# Internal ClusterIP service for cross-namespace communication
+apiVersion: v1
+kind: Service
+metadata:
+  name: yt-transcript-api-internal
+  namespace: yt-transcript
+  labels:
+    app: yt-transcript-api
+spec:
+  type: ClusterIP
   sessionAffinity: None
   selector:
     app: yt-transcript-api
   ports:
   - name: http
     port: 80
-    targetPort: http
+    targetPort: 3000
     protocol: TCP
 ---
-# Headless service for pod discovery (optional)
+# Headless service for pod discovery (StatefulSet compatibility)
 apiVersion: v1
 kind: Service
 metadata:
@@ -35,5 +52,5 @@ spec:
   ports:
   - name: http
     port: 3000
-    targetPort: http
+    targetPort: 3000
     protocol: TCP
