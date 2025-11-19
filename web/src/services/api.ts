@@ -142,7 +142,7 @@ export interface MetricsResponse {
 class TranscriptAPI {
   private client = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 60000, // 60 seconds timeout
+    timeout: 120000, // 120 seconds timeout (2 minutes for longer videos)
     headers: {
       'Content-Type': 'application/json',
     },
