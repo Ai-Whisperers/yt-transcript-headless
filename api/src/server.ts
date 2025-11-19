@@ -26,19 +26,22 @@ app.use(helmet({
   contentSecurityPolicy: false // Disable CSP for Swagger UI to work
 }));
 
-// CORS configuration - fail fast in production if not set
-const corsOrigin = process.env.CORS_ORIGIN || (isDevelopment ? 'http://localhost:5173' : undefined);
-if (!corsOrigin && !isDevelopment) {
-  logger.error('CORS_ORIGIN environment variable must be set in production');
-  process.exit(1);
-}
+// CORS configuration
+// In production with bundled frontend, CORS can be disabled (same-origin)
+// Set CORS_ORIGIN environment variable to enable cross-origin requests
+const corsOrigin = process.env.CORS_ORIGIN || (isDevelopment ? 'http://localhost:5173' : false);
 
-app.use(cors({
-  origin: corsOrigin,
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'X-Correlation-ID'],
-  exposedHeaders: ['X-Correlation-ID']
-}));
+if (corsOrigin) {
+  logger.info('CORS enabled', { origin: corsOrigin });
+  app.use(cors({
+    origin: corsOrigin,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'X-Correlation-ID'],
+    exposedHeaders: ['X-Correlation-ID']
+  }));
+} else {
+  logger.info('CORS disabled - same-origin only (frontend bundled with API)');
+}
 
 // Rate limiting for single video transcription
 const limiter = rateLimit({
