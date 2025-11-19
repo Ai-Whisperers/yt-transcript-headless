@@ -2,6 +2,7 @@ import { Page } from 'playwright';
 import { TranscriptSegment } from '../domain/TranscriptSegment';
 import { BrowserManager } from './BrowserManager';
 import { Logger } from './Logger';
+import { wait } from './utils/async-helpers';
 
 export class TranscriptExtractor {
   private browserManager: BrowserManager;
@@ -32,7 +33,7 @@ export class TranscriptExtractor {
         this.logger.warn(`Attempt ${attempt} failed: ${error.message}`);
 
         if (attempt < this.maxRetries) {
-          await this.wait(2000 * attempt); // Progressive delay
+          await wait(2000 * attempt); // Progressive delay
         }
       }
     }
@@ -58,7 +59,7 @@ export class TranscriptExtractor {
       await page.waitForLoadState('domcontentloaded', { timeout: this.timeout });
 
       // Wait for page to be interactive
-      await this.wait(BrowserManager.randomDelay(2000, 3000));
+      await wait(BrowserManager.randomDelay(2000, 3000));
 
       // Attach page error listeners for debugging
       page.on('pageerror', (error) => {
@@ -101,7 +102,7 @@ export class TranscriptExtractor {
         if (await showMoreButton.isVisible({ timeout: 3000 })) {
           this.logger.info('Clicking "Show more" button');
           await showMoreButton.click({ delay: BrowserManager.randomDelay(100, 300) });
-          await this.wait(BrowserManager.randomDelay(500, 1000));
+          await wait(BrowserManager.randomDelay(500, 1000));
           return;
         }
       }
@@ -130,7 +131,7 @@ export class TranscriptExtractor {
     if (await moreActionsButton.isVisible({ timeout: 3000 })) {
       this.logger.info('Opening more actions menu');
       await moreActionsButton.click({ delay: BrowserManager.randomDelay(200, 400) });
-      await this.wait(BrowserManager.randomDelay(500, 1000));
+      await wait(BrowserManager.randomDelay(500, 1000));
     }
 
     // Try to find and click transcript button
@@ -159,7 +160,7 @@ export class TranscriptExtractor {
     });
 
     this.logger.info('Transcript panel opened');
-    await this.wait(BrowserManager.randomDelay(1000, 2000));
+    await wait(BrowserManager.randomDelay(1000, 2000));
   }
 
   private async extractTranscriptSegments(page: Page): Promise<TranscriptSegment[]> {
@@ -309,9 +310,5 @@ export class TranscriptExtractor {
     } catch (error) {
       this.logger.warn('Auto-scroll failed, continuing with available segments');
     }
-  }
-
-  private wait(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

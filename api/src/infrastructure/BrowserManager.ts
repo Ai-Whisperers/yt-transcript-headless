@@ -1,6 +1,7 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import { Logger } from './Logger';
 import { metricsCollector } from './middleware/observability';
+import { wait } from './utils/async-helpers';
 
 export class BrowserManager {
   private logger: Logger;
@@ -183,7 +184,7 @@ export class BrowserManager {
           metricsCollector.recordExtractionRetry();
           const delay = 2000 * attempt; // Progressive delay (2000ms per standard)
           this.logger.info(`Retrying context creation in ${delay}ms`);
-          await this.wait(delay);
+          await wait(delay);
         }
       }
     }
@@ -270,34 +271,5 @@ export class BrowserManager {
    */
   static randomDelay(min: number, max: number): number {
     return Math.floor(Math.random() * (max - min + 1)) + min;
-  }
-
-  /**
-   * Auto-scroll implementation for dynamic content loading
-   */
-  static async autoScroll(page: Page): Promise<void> {
-    await page.evaluate(async () => {
-      await new Promise<void>((resolve) => {
-        let totalHeight = 0;
-        const distance = 800;
-        const timer = setInterval(() => {
-          const scrollHeight = document.body.scrollHeight;
-          window.scrollBy(0, distance);
-          totalHeight += distance;
-
-          if (totalHeight >= scrollHeight - window.innerHeight) {
-            clearInterval(timer);
-            resolve();
-          }
-        }, 300 + Math.random() * 400);
-      });
-    });
-  }
-
-  /**
-   * Wait helper for delays
-   */
-  private wait(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

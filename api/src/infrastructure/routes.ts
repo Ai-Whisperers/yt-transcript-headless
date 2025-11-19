@@ -14,6 +14,7 @@ import {
 } from '../domain/errors';
 import { ExpressMCPHandler } from '../mcp/express-mcp-handler';
 import { RequestQueue } from './RequestQueue';
+import { sendQueueFullError } from './utils/error-handlers';
 
 export interface RouterContext {
   router: Router;
@@ -253,18 +254,7 @@ export function createRouter(): RouterContext {
     } catch (error: any) {
       // Handle queue-specific errors
       if (error.message === 'Queue is full. Please try again later.') {
-        res.status(503).json({
-          success: false,
-          error: {
-            message: 'Service is currently at capacity. Please try again later.',
-            code: 'QUEUE_FULL',
-            timestamp: new Date().toISOString(),
-            correlationId: req.correlationId,
-            context: {
-              queueStats: requestQueue.getStats()
-            }
-          }
-        });
+        sendQueueFullError(res, req.correlationId, requestQueue);
         return;
       }
 
@@ -383,18 +373,7 @@ export function createRouter(): RouterContext {
     } catch (error: any) {
       // Handle queue-specific errors
       if (error.message === 'Queue is full. Please try again later.') {
-        res.status(503).json({
-          success: false,
-          error: {
-            message: 'Service is currently at capacity. Please try again later.',
-            code: 'QUEUE_FULL',
-            timestamp: new Date().toISOString(),
-            correlationId: req.correlationId,
-            context: {
-              queueStats: requestQueue.getStats()
-            }
-          }
-        });
+        sendQueueFullError(res, req.correlationId, requestQueue);
         return;
       }
 

@@ -1,6 +1,6 @@
 {
   "name": "yt-transcript-api",
-  "version": "0.1.0-alpha",
+  "version": "0.3.0-beta",
   "description": "Headless YouTube transcript extraction microservice",
   "main": "dist/server.js",
   "scripts": {
