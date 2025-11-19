@@ -15,4 +15,6 @@ module.exports = {
   coverageReporters: ['text', 'lcov', 'html'],
   testTimeout: 60000,
   verbose: true,
+  // Run tests sequentially to avoid browser/server conflicts
+  maxWorkers: 1,
 };

@@ -13,7 +13,9 @@ services:
       - RATE_LIMIT_WINDOW=60000
       - RATE_LIMIT_MAX=10
       - LOG_LEVEL=info
-      - CORS_ORIGIN=*
+      # CORS disabled for same-origin deployment (frontend bundled with API)
+      # Set to specific domain if frontend is hosted separately
+      # - CORS_ORIGIN=https://yourdomain.com
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""]
