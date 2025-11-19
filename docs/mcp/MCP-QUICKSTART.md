@@ -169,11 +169,13 @@ Check console for specific errors.
 
 ## Next Steps
 
-See `MCP-TOOLKIT.md` for:
+See [MCP Toolkit](MCP-TOOLKIT.md) for:
 - Detailed tool documentation
 - Security considerations
 - Adding custom tools
 - Performance optimization
+
+For complete documentation, visit the [Documentation Index](../README.md)
 
 ---
 

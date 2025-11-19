@@ -45,6 +45,9 @@ This separation enables vendor-agnostic deployment and clean separation of conce
 ./scripts/test-api.sh unit           # Unit tests only
 ./scripts/test-api.sh e2e            # E2E tests only
 ./scripts/test-integration.sh        # Integration tests only
+
+# Quick API test (requires running API container)
+node ./scripts/test-transcript.js    # Test transcript extraction
 ```
 
 ## Configuration
@@ -90,7 +93,8 @@ local-dev/
 │   ├── stop-all.sh          # Stop Docker services
 │   ├── test-all.sh          # Run complete test suite
 │   ├── test-api.sh          # Run API tests (unit/e2e)
-│   └── test-integration.sh  # Run integration tests
+│   ├── test-integration.sh  # Run integration tests
+│   └── test-transcript.js   # Quick API test (Node.js)
 ├── .env.api.template        # API config template
 ├── .env.web.template        # Web config template
 ├── .env.test.template       # Test config template

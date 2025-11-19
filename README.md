@@ -454,6 +454,18 @@ logger.error('Extraction failed', { error, correlationId });
 | **Docker Compose** | Local development orchestration |
 | **Kubernetes** | Production deployment (ready) |
 
+## Documentation
+
+Complete documentation is organized in the `/docs` directory:
+
+- **[Documentation Index](docs/README.md)** - Complete documentation navigation
+- **[Project Structure](docs/STRUCTURE.md)** - Understanding codebase organization
+- **[Architecture](docs/ARCHITECTURE.md)** - System design and patterns
+- **[API Reference](docs/API.md)** - RESTful API specification
+- **[Deployment Guide](docs/DEPLOYMENT.md)** - Multi-platform deployment
+- **[MCP Quick Start](docs/mcp/MCP-QUICKSTART.md)** - MCP protocol integration
+- **[Local Development](local-dev/README.md)** - Development environment setup
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.

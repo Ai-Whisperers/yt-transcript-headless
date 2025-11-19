@@ -297,21 +297,25 @@ npm run mcp
 ## File Structure
 
 ```
-api/
-├── src/
-│   ├── mcp/
-│   │   ├── mcp-server.ts           # Standalone MCP server
-│   │   └── express-mcp-handler.ts  # Express integration
-│   ├── application/
-│   │   └── TranscribeVideoUseCase.ts
-│   ├── infrastructure/
-│   │   ├── routes.ts               # Express routes with /mcp endpoint
-│   │   └── ...
-│   └── domain/
-│       └── ...
-├── mcp-config.json                 # Production config
-├── mcp-config.dev.json             # Development config
-└── MCP-TOOLKIT.md                  # This file
+simple-yt-transcript-extractor/
+├── api/
+│   ├── src/
+│   │   ├── mcp/
+│   │   │   ├── mcp-server.ts           # Standalone MCP server
+│   │   │   └── express-mcp-handler.ts  # Express integration
+│   │   ├── application/
+│   │   │   └── TranscribeVideoUseCase.ts
+│   │   ├── infrastructure/
+│   │   │   ├── routes.ts               # Express routes with /mcp endpoint
+│   │   │   └── ...
+│   │   └── domain/
+│   │       └── ...
+│   ├── mcp-config.json                 # Production config
+│   └── mcp-config.dev.json             # Development config
+└── docs/
+    └── mcp/
+        ├── MCP-QUICKSTART.md           # Quick start guide
+        └── MCP-TOOLKIT.md              # This file
 ```
 
 ---
