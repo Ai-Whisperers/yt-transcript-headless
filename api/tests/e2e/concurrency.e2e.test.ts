@@ -100,7 +100,7 @@ describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
         title: 'Slow Video',
         hasTranscript: true,
         transcriptSegments: [{ time: '0:00', text: 'Slow transcript' }],
-        responseDelay: 2000 // 2 second delay to fill queue
+        responseDelay: 5000 // 5 second delay to ensure queue stays full
       });
 
       // Start 5 parallel long-running requests
@@ -112,8 +112,8 @@ describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
           })
       );
 
-      // Wait for queue to fill
-      await waitForQueueSettlement(1000);
+      // Wait briefly for requests to enter queue
+      await waitForQueueSettlement(500);
 
       // Check metrics while requests are running
       const metricsResponse = await request(app).get('/api/metrics');
@@ -190,29 +190,46 @@ describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
           title: `FIFO Test ${i}`,
           hasTranscript: true,
           transcriptSegments: [{ time: '0:00', text: `Transcript ${i}` }],
-          responseDelay: 200 // Consistent delay
+          responseDelay: 100 // Fast delay for sequential execution
         });
       }
 
-      const timestamps: { id: number; startTime: number; endTime: number }[] = [];
+      const timestamps: { id: number; startTime: number; endTime: number; success: boolean }[] = [];
 
       // Send 5 requests sequentially with tracking
       for (let i = 0; i < 5; i++) {
         const startTime = Date.now();
 
         try {
-          await keepAliveWrapper(request(app).post('/api/transcribe'))
+          const response = await request(app)
+            .post('/api/transcribe')
+            .timeout(10000)
             .send({
               url: `${mockServer.getBaseUrl()}/watch?v=fifo${i}`,
               format: 'json'
             });
 
-          timestamps.push({ id: i, startTime, endTime: Date.now() });
-        } catch (error) {
-          // Track failures too
-          timestamps.push({ id: i, startTime, endTime: Date.now() });
+          timestamps.push({
+            id: i,
+            startTime,
+            endTime: Date.now(),
+            success: response.status === 200
+          });
+        } catch (error: any) {
+          // Track failures with error details
+          console.log(`Request ${i} failed:`, error.message);
+          timestamps.push({
+            id: i,
+            startTime,
+            endTime: Date.now(),
+            success: false
+          });
         }
       }
+
+      // Verify at least some requests succeeded
+      const successCount = timestamps.filter(t => t.success).length;
+      expect(successCount).toBeGreaterThan(0);
 
       // Verify ordering: requests should complete in approximately FIFO order
       for (let i = 1; i < timestamps.length; i++) {

@@ -73,6 +73,10 @@ export class MockYouTubeServer {
         ).join('\n          ')
       : '';
 
+    const transcriptButton = video.hasTranscript
+      ? `<button aria-label="Show transcript" id="transcript-button">Show transcript</button>`
+      : '';
+
     const transcriptPanel = video.hasTranscript
       ? `<ytd-transcript-segment-list-renderer id="transcript-panel" style="display: none;">
           ${transcriptSegments}
@@ -85,7 +89,7 @@ export class MockYouTubeServer {
 <head><title>${video.title} - YouTube</title></head>
 <body>
   <div id="movie_player"></div>
-  <button aria-label="Show transcript" id="transcript-button">Show transcript</button>
+  ${transcriptButton}
   ${transcriptPanel}
   <script>
     const button = document.getElementById('transcript-button');

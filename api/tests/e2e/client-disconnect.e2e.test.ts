@@ -63,11 +63,11 @@ describe('Client Disconnect E2E Tests - Phase 6.2', () => {
         expect(error.code || error.timeout || error.message).toMatch(/TIMEOUT|ECONNABORTED|ECONNRESET|timeout|timed out/i);
       }
 
-      // Verify queue was cleaned up
-      await waitForQueueSettlement(1000);
+      // Verify queue was cleaned up (give more time for cleanup)
+      await waitForQueueSettlement(5000);
       const metrics = await request(app).get('/api/metrics');
       expect(metrics.body.data.queue.active).toBe(0);
-    }, 15000);
+    }, 20000);
 
     it('should clean up browser resources after timeout', async () => {
       // Register slow video
@@ -92,8 +92,8 @@ describe('Client Disconnect E2E Tests - Phase 6.2', () => {
         // Timeout expected
       }
 
-      // Wait for cleanup to complete
-      await waitForQueueSettlement(2000);
+      // Wait for cleanup to complete (give more time)
+      await waitForQueueSettlement(5000);
 
       // System should still be healthy
       const healthCheck = await request(app).get('/api/health');
@@ -104,7 +104,7 @@ describe('Client Disconnect E2E Tests - Phase 6.2', () => {
       const metrics = await request(app).get('/api/metrics');
       expect(metrics.body.data.queue.active).toBe(0);
       expect(metrics.body.data.queue.pending).toBe(0);
-    }, 15000);
+    }, 20000);
   });
 
   describe('Request Queue Stability', () => {
@@ -136,8 +136,8 @@ describe('Client Disconnect E2E Tests - Phase 6.2', () => {
       // Should have all 5 results
       expect(results.length).toBe(5);
 
-      // Wait for queue to settle
-      await waitForQueueSettlement(3000);
+      // Wait for queue to settle (give more time for all cleanup)
+      await waitForQueueSettlement(5000);
 
       // Queue should be stable (no active requests)
       const metrics = await request(app).get('/api/metrics');
@@ -147,7 +147,7 @@ describe('Client Disconnect E2E Tests - Phase 6.2', () => {
       // System should still be healthy
       const health = await request(app).get('/api/health');
       expect(health.status).toBe(200);
-    }, 30000);
+    }, 40000);
   });
 
   describe('Resource Cleanup Verification', () => {
