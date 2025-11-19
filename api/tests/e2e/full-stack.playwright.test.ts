@@ -40,9 +40,17 @@ test.describe('Full-Stack Frontend-Backend E2E Tests', () => {
     // Proxy API requests to backend
     frontendApp.use('/api', (req, res) => {
       const url = `http://localhost:${API_PORT}/api${req.url}`;
-      const options = {
+      // Convert IncomingHttpHeaders to Headers object for fetch
+      const headers: Record<string, string> = {};
+      Object.entries(req.headers).forEach(([key, value]) => {
+        if (value) {
+          headers[key] = Array.isArray(value) ? value[0] : value;
+        }
+      });
+
+      const options: RequestInit = {
         method: req.method,
-        headers: req.headers
+        headers
       };
 
       fetch(url, options)

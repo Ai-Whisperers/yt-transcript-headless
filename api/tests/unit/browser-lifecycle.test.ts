@@ -95,7 +95,14 @@ describe('BrowserManager - Phase 1 Validation', () => {
       // Verify browser was disconnected by cleanup
       expect(capturedBrowser).toBeDefined();
       if (capturedBrowser) {
-        browserDisconnected = !capturedBrowser.isConnected();
+        // Note: isConnected() method may have changed in Playwright 1.56.1
+        // Check if browser is still valid
+        try {
+          await capturedBrowser.version();
+          browserDisconnected = false;
+        } catch (e) {
+          browserDisconnected = true;
+        }
         expect(browserDisconnected).toBe(true);
       }
     }, 30000);

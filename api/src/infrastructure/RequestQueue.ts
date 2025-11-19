@@ -85,7 +85,10 @@ export class RequestQueue {
           this.queue.splice(index, 1);
         }
 
-        reject(new Error('Request timed out in queue'));
+        // Create error with code property for better error handling
+        const error: any = new Error('Request timed out in queue');
+        error.code = 'QUEUE_TIMEOUT';
+        reject(error);
       }, this.queueTimeout);
 
       const queuedTask: QueuedTask<T> = {
