@@ -5,6 +5,7 @@
 
 import { Server } from 'http';
 import express, { Express } from 'express';
+import { Socket } from 'net';
 
 export interface MockVideoConfig {
   videoId: string;
@@ -19,6 +20,7 @@ export class MockYouTubeServer {
   private server: Server | null = null;
   private port: number;
   private videos: Map<string, MockVideoConfig> = new Map();
+  private connections: Set<Socket> = new Set();
 
   constructor(port: number = 9999) {
     this.port = port;
@@ -105,12 +107,27 @@ export class MockYouTubeServer {
       });
 
       this.server.on('error', reject);
+
+      // Track all connections for proper cleanup
+      this.server.on('connection', (socket: Socket) => {
+        this.connections.add(socket);
+        socket.on('close', () => {
+          this.connections.delete(socket);
+        });
+      });
     });
   }
 
   stop(): Promise<void> {
     return new Promise((resolve) => {
       if (this.server) {
+        // Force close all active connections immediately
+        for (const socket of this.connections) {
+          socket.destroy();
+        }
+        this.connections.clear();
+
+        // Now close the server
         this.server.close(() => {
           console.log('Mock YouTube server stopped');
           resolve();
