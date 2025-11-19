@@ -5,9 +5,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-1.40-green)](https://playwright.dev/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com/)
-[![Version](https://img.shields.io/badge/version-0.1.0--alpha-orange)](https://github.com/Ai-Whisperers/yt-transcript-headless)
+[![Version](https://img.shields.io/badge/version-0.3.0--beta-blue)](https://github.com/Ai-Whisperers/yt-transcript-headless)
 
-**Doc-Type:** Main Documentation · Version 0.1.0-alpha · Updated 2025-11-15 · AI Whisperers
+**Doc-Type:** Main Documentation · Version 0.3.0-beta · Updated 2025-11-19 · AI Whisperers
 
 A production-ready headless YouTube transcript extraction service built with Playwright, featuring advanced error handling, observability, and MCP protocol support.
 
@@ -30,7 +30,19 @@ A production-ready headless YouTube transcript extraction service built with Pla
 
 This project provides a robust solution for extracting YouTube video transcripts using headless browser automation. It implements stealth techniques and human-like behavior patterns to reliably extract transcripts from YouTube's embedded transcript feature.
 
-### Recent Updates (v0.1.0-alpha)
+### Recent Updates
+
+**v0.3.0-beta (2025-11-19) - Code Quality & Documentation:**
+- Removed dead code (BrowserManager.autoScroll static method)
+- Consolidated duplicated logic into shared utilities
+- Created `utils/async-helpers.ts` for shared wait() function
+- Created `utils/error-handlers.ts` for shared queue error handling
+- Improved code maintainability with net reduction of 9 lines
+- Reorganized documentation structure with comprehensive index
+- Created module-specific READMEs for api/ and web/
+- Moved all docs to `/docs` directory for better organization
+
+**v0.1.0-alpha - Foundation:**
 
 **Phase 2 - Enhanced YouTube URL Validation:**
 - Comprehensive URL format validation with detailed error messages
@@ -83,6 +95,7 @@ PROJECT/
 │   │   │   ├── Logger.ts                  # Winston logging
 │   │   │   ├── routes.ts                  # Express routes
 │   │   │   ├── middleware/                # Observability & error handling
+│   │   │   ├── utils/                     # Shared utilities (async-helpers, error-handlers)
 │   │   │   └── swagger.yaml               # OpenAPI 3.0 spec
 │   │   └── mcp/            # Model Context Protocol server
 │   │       ├── mcp-server.ts              # MCP standalone server
@@ -90,14 +103,30 @@ PROJECT/
 │   ├── tests/
 │   │   ├── unit/           # Domain/application layer tests
 │   │   └── e2e/            # API integration tests
+│   ├── README.md           # API module documentation
 │   └── Dockerfile          # Multi-stage production build
 │
-└── web/                    # React + Vite dashboard
-    ├── src/
-    │   ├── components/
-    │   ├── pages/
-    │   └── services/       # Axios API client
-    └── Dockerfile          # Built in multi-stage with API
+├── web/                    # React + Vite dashboard
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   └── services/       # Axios API client
+│   ├── README.md           # Web module documentation
+│   └── Dockerfile          # Built in multi-stage with API
+│
+├── docs/                   # Project documentation
+│   ├── README.md           # Documentation index
+│   ├── STRUCTURE.md        # Project organization guide
+│   ├── ARCHITECTURE.md     # System design
+│   ├── API.md              # API specification
+│   ├── DEPLOYMENT.md       # Deployment guide
+│   ├── mcp/                # MCP protocol docs
+│   └── cloudflare/         # Cloud integration docs
+│
+└── local-dev/              # Development bootstrap
+    ├── README.md           # Development setup guide
+    ├── docker-compose.dev.yml
+    └── scripts/            # Start/stop/test scripts
 ```
 
 ## Quick Start
