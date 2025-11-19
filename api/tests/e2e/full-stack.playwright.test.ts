@@ -3,6 +3,7 @@ import express from 'express';
 import { Server } from 'http';
 import { createRouter } from '../../src/infrastructure/routes';
 import { MockYouTubeServer } from '../helpers/MockYouTubeServer';
+import { getAvailablePort, getRandomPort } from '../helpers/port-utils';
 import path from 'path';
 import sirv from 'sirv';
 
@@ -10,12 +11,17 @@ let apiApp: express.Application;
 let apiServer: Server;
 let mockYouTubeServer: MockYouTubeServer;
 let frontendServer: Server;
-const API_PORT = 3001;
-const FRONTEND_PORT = 5174;
-const MOCK_YOUTUBE_PORT = 9996;
+let API_PORT: number;
+let FRONTEND_PORT: number;
+let MOCK_YOUTUBE_PORT: number;
 
 test.describe('Full-Stack Frontend-Backend E2E Tests', () => {
   test.beforeAll(async () => {
+    // Allocate dynamic ports for test isolation
+    MOCK_YOUTUBE_PORT = await getAvailablePort(getRandomPort(10000, 10500));
+    API_PORT = await getAvailablePort(getRandomPort(10500, 11000));
+    FRONTEND_PORT = await getAvailablePort(getRandomPort(11000, 11500));
+
     // Start Mock YouTube Server
     mockYouTubeServer = new MockYouTubeServer(MOCK_YOUTUBE_PORT);
     await mockYouTubeServer.start();

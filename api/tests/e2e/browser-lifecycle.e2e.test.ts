@@ -3,10 +3,12 @@ import express from 'express';
 import { createRouter } from '../../src/infrastructure/routes';
 import { MockYouTubeServer } from '../helpers/MockYouTubeServer';
 import { keepAliveWrapper, waitForQueueSettlement } from '../helpers/LongRunningRequestHelper';
+import { getAvailablePort, getRandomPort } from '../helpers/port-utils';
 
 describe('Browser Lifecycle E2E Tests - Phase 6.2', () => {
   let app: express.Application;
   let mockServer: MockYouTubeServer;
+  let mockServerPort: number;
 
   beforeAll(async () => {
     app = express();
@@ -14,13 +16,19 @@ describe('Browser Lifecycle E2E Tests - Phase 6.2', () => {
     const { router } = createRouter();
     app.use('/api', router);
 
-    // Start mock YouTube server
-    mockServer = new MockYouTubeServer(9997);
+    // Start mock YouTube server with dynamic port allocation
+    const randomStart = getRandomPort(9000, 9500);
+    mockServerPort = await getAvailablePort(randomStart);
+    mockServer = new MockYouTubeServer(mockServerPort);
     await mockServer.start();
   });
 
   afterAll(async () => {
-    await mockServer.stop();
+    if (mockServer) {
+      await mockServer.stop();
+      // Give server time to fully release the port
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
   });
 
   beforeEach(() => {
