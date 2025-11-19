@@ -64,10 +64,19 @@ export class MockYouTubeServer {
   }
 
   private generateMockYouTubePage(video: MockVideoConfig): string {
-    const transcript = video.hasTranscript
-      ? video.transcriptSegments?.map(seg =>
-          `<div class="segment" data-time="${seg.time}">${seg.text}</div>`
-        ).join('')
+    const transcriptSegments = video.hasTranscript && video.transcriptSegments
+      ? video.transcriptSegments.map(seg =>
+          `<ytd-transcript-segment-renderer>
+            <div class="segment-timestamp">${seg.time}</div>
+            <yt-formatted-string class="segment-text">${seg.text}</yt-formatted-string>
+          </ytd-transcript-segment-renderer>`
+        ).join('\n          ')
+      : '';
+
+    const transcriptPanel = video.hasTranscript
+      ? `<ytd-transcript-segment-list-renderer id="transcript-panel" style="display: none;">
+          ${transcriptSegments}
+        </ytd-transcript-segment-list-renderer>`
       : '';
 
     return `
@@ -76,15 +85,16 @@ export class MockYouTubeServer {
 <head><title>${video.title} - YouTube</title></head>
 <body>
   <div id="movie_player"></div>
-  <button aria-label="Show transcript">Show transcript</button>
-  <div id="transcript-panel" style="display: none;">
-    ${transcript}
-    <button>Show more</button>
-  </div>
+  <button aria-label="Show transcript" id="transcript-button">Show transcript</button>
+  ${transcriptPanel}
   <script>
-    document.querySelector('[aria-label="Show transcript"]').onclick = () => {
-      document.getElementById('transcript-panel').style.display = 'block';
-    };
+    const button = document.getElementById('transcript-button');
+    const panel = document.getElementById('transcript-panel');
+    if (button && panel) {
+      button.onclick = () => {
+        panel.style.display = 'block';
+      };
+    }
   </script>
 </body>
 </html>
