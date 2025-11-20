@@ -98,7 +98,7 @@ describe('BrowserManager - Phase 1 Validation', () => {
         // Note: isConnected() method may have changed in Playwright 1.56.1
         // Check if browser is still valid
         try {
-          await capturedBrowser.version();
+          await (capturedBrowser as Browser).version();
           browserDisconnected = false;
         } catch (e) {
           browserDisconnected = true;

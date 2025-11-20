@@ -4,6 +4,7 @@ import { createRouter } from '../../src/infrastructure/routes';
 import { MockYouTubeServer } from '../helpers/MockYouTubeServer';
 import { keepAliveWrapper, waitForQueueSettlement } from '../helpers/LongRunningRequestHelper';
 import { getAvailablePort, getRandomPort } from '../helpers/port-utils';
+import { waitForServerReady } from '../helpers/server-utils';
 
 describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
   let app: express.Application;
@@ -21,6 +22,12 @@ describe('Concurrency Queue E2E Tests - Phase 6.2', () => {
     mockServerPort = await getAvailablePort(randomStart);
     mockServer = new MockYouTubeServer(mockServerPort);
     await mockServer.start();
+
+    // Wait for server to be fully ready
+    const isReady = await waitForServerReady(mockServer);
+    if (!isReady) {
+      throw new Error('Mock server failed to start');
+    }
   });
 
   afterAll(async () => {

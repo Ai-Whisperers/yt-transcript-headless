@@ -3,6 +3,10 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts', '**/*.spec.ts'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '\\.playwright\\.test\\.ts$' // Exclude Playwright tests (use @playwright/test runner instead)
+  ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   moduleDirectories: ['node_modules', '<rootDir>/node_modules'],
   modulePaths: ['<rootDir>/src', '<rootDir>'],
