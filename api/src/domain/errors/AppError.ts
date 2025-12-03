@@ -27,13 +27,14 @@ export abstract class AppError extends Error {
     Error.captureStackTrace(this);
   }
 
-  toJSON() {
+  toJSON(correlationId?: string) {
     return {
       success: false,
       error: {
         message: this.message,
         code: this.code,
         timestamp: this.timestamp,
+        ...(correlationId && { correlationId }),
         ...(this.context && { context: this.context })
       }
     };

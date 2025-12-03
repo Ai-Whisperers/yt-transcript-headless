@@ -21,7 +21,7 @@ export function errorHandler(logger: Logger) {
         method: req.method
       });
 
-      res.status(err.statusCode).json(err.toJSON());
+      res.status(err.statusCode).json(err.toJSON(correlationId));
       return;
     }
 
