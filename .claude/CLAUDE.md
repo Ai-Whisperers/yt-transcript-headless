@@ -1,5 +1,5 @@
 # YouTube Transcript Extractor - Project Standards
-Doc-Type: Project-Level Configuration · Version 1.1.0 · Updated 2025-12-03 · AI Whisperers
+Doc-Type: Project-Level Configuration · Version 1.2.0 · Updated 2025-12-03 · AI Whisperers
 
 ## Purpose & Scope
 
@@ -48,6 +48,7 @@ api/src/
     ├── TranscriptExtractor.ts   # Extraction with BrowserManager
     ├── PooledTranscriptExtractor.ts  # Extraction with BrowserPool
     ├── PlaylistExtractor.ts     # Playlist video ID extraction
+    ├── ProgressStream.ts        # SSE progress streaming
     ├── RequestQueue.ts          # Concurrency control
     └── Logger.ts                # Winston logging
 ```
@@ -85,8 +86,10 @@ Each class serves exactly one purpose:
 - TranscriptExtractor: Transcript extraction with disposable browsers
 - PooledTranscriptExtractor: Transcript extraction with pooled contexts
 - TranscribeVideoUseCase: Orchestrate single video extraction
-- TranscribePlaylistUseCase: Orchestrate playlist extraction
-- BatchTranscribeUseCase: Orchestrate batch URL extraction
+- TranscribePlaylistUseCase: Orchestrate playlist extraction (parallel)
+- BatchTranscribeUseCase: Orchestrate batch URL extraction (parallel)
+- ProgressStream: SSE connections for real-time progress updates
+- ProgressEmitter: Emit progress events from use cases
 - RequestQueue: Concurrency control and queue management
 - Logger: Centralized logging with Winston
 
@@ -264,11 +267,13 @@ QUEUE_TIMEOUT_MS=60000
 PLAYLIST_RATE_LIMIT_WINDOW=300000
 PLAYLIST_RATE_LIMIT_MAX=3
 PLAYLIST_MAX_VIDEOS_LIMIT=100
+PLAYLIST_CONCURRENCY=3            # Parallel workers
 
 # Batch Configuration
 BATCH_RATE_LIMIT_WINDOW=300000
 BATCH_RATE_LIMIT_MAX=5
 BATCH_MAX_SIZE=50
+BATCH_CONCURRENCY=3               # Parallel workers
 
 # Browser Pool Configuration
 POOL_MAX_CONTEXTS=5
@@ -396,8 +401,12 @@ resources:
 - `GET /api/health` - Health check with memory and queue stats
 - `GET /api/health/browser` - Browser health check (60s cache)
 - `POST /api/transcribe` - Extract single video transcript
-- `POST /api/transcribe/playlist` - Extract playlist transcripts
-- `POST /api/transcribe/batch` - Extract batch URL transcripts
+- `POST /api/transcribe/playlist` - Extract playlist transcripts (parallel)
+- `POST /api/transcribe/batch` - Extract batch URL transcripts (parallel)
+- `POST /api/transcribe/batch/stream` - Batch with SSE progress streaming
+- `POST /api/transcribe/playlist/stream` - Playlist with SSE progress streaming
+- `GET /api/transcribe/batch/progress/:jobId` - SSE endpoint for batch progress
+- `GET /api/transcribe/playlist/progress/:jobId` - SSE endpoint for playlist progress
 - `GET /api/formats` - Get supported formats
 - `GET /api/metrics` - Observability metrics
 
@@ -617,10 +626,10 @@ When extending this project, maintain these principles:
 **Potential Features:**
 - Multiple language support for transcripts
 - Transcript translation service integration
-- Parallel batch processing (architecture ready, implementation pending)
-- WebSocket/SSE streaming for real-time extraction progress
-- Caching layer (Redis) for frequently accessed transcripts
-- Progress tracking API for long-running batch operations
+- Local persistence layer (DuckDB/SQLite) for job results caching
+- Redis caching layer for distributed deployments
+- Webhook callbacks for external system notifications
+- Frontend batch UI with progress visualization
 
 **Architecture Preservation:**
 - Keep domain logic pure and testable
@@ -663,6 +672,7 @@ kubectl apply -f k8s/deployment.yaml
 
 | Date       | Version | Description                              |
 |:-----------|:--------|:-----------------------------------------|
+| 2025-12-03 | v1.2.0  | Added parallel processing for batch/playlist, SSE progress streaming |
 | 2025-12-03 | v1.1.0  | Added batch URL endpoint, browser pooling architecture |
 | 2025-11-15 | v1.0.0  | Initial project standards documentation  |
 

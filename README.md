@@ -5,9 +5,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-1.40-green)](https://playwright.dev/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com/)
-[![Version](https://img.shields.io/badge/version-0.3.0--beta-blue)](https://github.com/Ai-Whisperers/yt-transcript-headless)
+[![Version](https://img.shields.io/badge/version-0.5.0--beta-blue)](https://github.com/Ai-Whisperers/yt-transcript-headless)
 
-**Doc-Type:** Main Documentation · Version 0.4.0-beta · Updated 2025-12-03 · AI Whisperers
+**Doc-Type:** Main Documentation · Version 0.5.0-beta · Updated 2025-12-03 · AI Whisperers
 
 A production-ready headless YouTube transcript extraction service built with Playwright, featuring advanced error handling, observability, and MCP protocol support.
 
@@ -32,12 +32,24 @@ This project provides a robust solution for extracting YouTube video transcripts
 
 ### Recent Updates
 
+**v0.5.0-beta (2025-12-03) - Parallel Processing & Real-time Progress:**
+- **Parallel Processing:** Both batch and playlist now process videos concurrently (3x-5x faster)
+- **SSE Progress Streaming:** Real-time progress updates via Server-Sent Events
+- New streaming endpoints:
+  - `POST /api/transcribe/batch/stream` - Start batch with progress streaming
+  - `POST /api/transcribe/playlist/stream` - Start playlist with progress streaming
+  - `GET /api/transcribe/batch/progress/:jobId` - SSE endpoint for batch progress
+  - `GET /api/transcribe/playlist/progress/:jobId` - SSE endpoint for playlist progress
+- Progress events: `started`, `processing`, `itemCompleted`, `completed`, `failed`, `aborted`
+- Added ProgressStream infrastructure for SSE connections
+- Playlist now uses BrowserPool (same as batch) for parallel extraction
+- New environment variables: `PLAYLIST_CONCURRENCY`, `BATCH_CONCURRENCY`
+
 **v0.4.0-beta (2025-12-03) - Batch Processing & Browser Pooling:**
 - Added `POST /api/transcribe/batch` endpoint for batch URL processing
 - Implemented BrowserPool for efficient browser context reuse
 - Added PooledTranscriptExtractor for batch operations
 - Added BatchTranscribeUseCase with URL validation and deduplication
-- Architecture prepared for parallel processing (sequential currently)
 - New environment variables for batch and pool configuration
 - Updated health endpoint with browser pool statistics
 
@@ -76,11 +88,13 @@ This project provides a robust solution for extracting YouTube video transcripts
 
 ### Key Features
 
+- **Parallel Processing:** Concurrent video extraction with configurable worker count (3-5x faster)
+- **Real-time Progress:** Server-Sent Events (SSE) for live extraction progress updates
 - **Headless Operation:** Runs without UI rendering for optimal performance
 - **Disposable Browser Pattern:** Resource cleanup with automatic browser lifecycle management
 - **Browser Pooling:** Reusable browser contexts for efficient batch operations
 - **Batch URL Processing:** Process multiple YouTube URLs in a single request
-- **Playlist Support:** Extract transcripts from entire YouTube playlists
+- **Playlist Support:** Extract transcripts from entire YouTube playlists with parallel processing
 - **Enhanced URL Validation:** Comprehensive YouTube URL format validation with detailed error messages
 - **Stealth Mode:** Anti-detection measures including user agent spoofing, plugin mocking, and randomized delays
 - **Advanced Error Handling:** Structured error responses with operational error classification
@@ -114,6 +128,7 @@ PROJECT/
 │   │   │   ├── TranscriptExtractor.ts     # Extraction with BrowserManager
 │   │   │   ├── PooledTranscriptExtractor.ts  # Extraction with BrowserPool
 │   │   │   ├── PlaylistExtractor.ts       # Playlist video ID extraction
+│   │   │   ├── ProgressStream.ts          # SSE progress streaming
 │   │   │   ├── RequestQueue.ts            # Concurrency control
 │   │   │   ├── Logger.ts                  # Winston logging
 │   │   │   ├── routes.ts                  # Express routes
@@ -246,6 +261,10 @@ Content-Type: application/json
 - `GET /api/metrics` - Observability metrics (requests, errors, latencies, queue stats)
 - `POST /api/transcribe/playlist` - Playlist transcription (YouTube playlist URLs)
 - `POST /api/transcribe/batch` - Batch URL transcription (array of video URLs)
+- `POST /api/transcribe/batch/stream` - Batch with SSE progress streaming
+- `POST /api/transcribe/playlist/stream` - Playlist with SSE progress streaming
+- `GET /api/transcribe/batch/progress/:jobId` - SSE endpoint for batch progress
+- `GET /api/transcribe/playlist/progress/:jobId` - SSE endpoint for playlist progress
 - `GET /api/formats` - Get supported transcript formats
 - `GET /api-docs` - Interactive Swagger UI documentation
 
@@ -344,6 +363,56 @@ Content-Type: application/json
   }
 }
 ```
+
+### SSE Progress Streaming
+
+For long-running batch or playlist operations, use the streaming endpoints to receive real-time progress updates.
+
+**Starting a Streaming Batch Request:**
+```bash
+curl -X POST http://localhost:3000/api/transcribe/batch/stream \
+  -H "Content-Type: application/json" \
+  -d '{"urls": ["https://youtube.com/watch?v=video1", "https://youtube.com/watch?v=video2"]}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "550e8400-e29b-41d4-a716-446655440000",
+    "sseEndpoint": "/api/transcribe/batch/progress/550e8400-e29b-41d4-a716-446655440000",
+    "totalUrls": 2,
+    "message": "Connect to SSE endpoint for progress updates"
+  }
+}
+```
+
+**Connecting to SSE Progress Stream:**
+```javascript
+const eventSource = new EventSource('/api/transcribe/batch/progress/550e8400-...');
+
+eventSource.onmessage = (event) => {
+  const progress = JSON.parse(event.data);
+  console.log(`Status: ${progress.status}, Progress: ${progress.currentIndex}/${progress.totalItems}`);
+
+  if (progress.status === 'completed' || progress.status === 'failed') {
+    eventSource.close();
+  }
+};
+```
+
+**Progress Event Types:**
+| Event | Description |
+|:------|:------------|
+| `connected` | Client connected to SSE stream |
+| `started` | Job processing has begun |
+| `processing` | Currently extracting a video |
+| `itemCompleted` | A video extraction finished (includes success/failure) |
+| `completed` | All videos processed successfully |
+| `failed` | Job failed with error |
+| `aborted` | Job was cancelled |
+| `done` | Stream closing |
 
 ### MCP Protocol Integration
 
@@ -455,13 +524,15 @@ ENABLE_STEALTH=true               # Enable anti-detection (stealth techniques)
 PLAYLIST_RATE_LIMIT_WINDOW=300000 # Playlist rate limit window (5 min)
 PLAYLIST_RATE_LIMIT_MAX=3         # Max playlist requests per window
 PLAYLIST_MAX_VIDEOS_LIMIT=100     # Max videos per playlist
+PLAYLIST_CONCURRENCY=3            # Parallel workers for playlist extraction
 
 # Batch Configuration
 BATCH_RATE_LIMIT_WINDOW=300000    # Batch rate limit window (5 min)
 BATCH_RATE_LIMIT_MAX=5            # Max batch requests per window
 BATCH_MAX_SIZE=50                 # Max URLs per batch request
+BATCH_CONCURRENCY=3               # Parallel workers for batch extraction
 
-# Browser Pool Configuration (for batch operations)
+# Browser Pool Configuration (for batch/playlist operations)
 POOL_MAX_CONTEXTS=5               # Max browser contexts in pool
 POOL_CONTEXT_MAX_AGE=300000       # Context max age before recycling (5 min)
 POOL_CONTEXT_MAX_USES=10          # Max extractions per context
