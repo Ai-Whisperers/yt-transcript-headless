@@ -12,6 +12,8 @@ export interface VideoTranscriptResult {
   videoTitle?: string;         // Optional video title for display
   success: boolean;
   transcript?: TranscriptSegment[];
+  srt?: string;                // SRT formatted transcript (when format=srt)
+  text?: string;               // Plain text transcript (when format=text)
   error?: {
     message: string;
     code: string;

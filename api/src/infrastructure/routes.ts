@@ -7,6 +7,7 @@ import { PlaylistExtractor } from './PlaylistExtractor';
 import { PooledTranscriptExtractor } from './PooledTranscriptExtractor';
 import { BrowserManager } from './BrowserManager';
 import { BrowserPool, getSharedBrowserPool, shutdownSharedPool } from './BrowserPool';
+import { ProgressStream, ProgressEmitter, getSharedProgressStream } from './ProgressStream';
 import { Logger } from './Logger';
 import { TranscriptRequest, TranscriptFormat } from '../domain/TranscriptSegment';
 import { PlaylistRequest } from '../domain/PlaylistTypes';
@@ -19,11 +20,13 @@ import {
 import { ExpressMCPHandler } from '../mcp/express-mcp-handler';
 import { RequestQueue } from './RequestQueue';
 import { sendQueueFullError } from './utils/error-handlers';
+import { randomUUID } from 'crypto';
 
 export interface RouterContext {
   router: Router;
   requestQueue: RequestQueue;
   browserPool: BrowserPool;
+  progressStream: ProgressStream;
 }
 
 export function createRouter(): RouterContext {
@@ -38,19 +41,25 @@ export function createRouter(): RouterContext {
   // Initialize shared components
   const browserManager = new BrowserManager(browserLogger);
   const extractor = new TranscriptExtractor(browserManager, logger);
-  const playlistExtractor = new PlaylistExtractor(browserManager, playlistLogger);
   const transcribeUseCase = new TranscribeVideoUseCase(extractor, logger);
-  const transcribePlaylistUseCase = new TranscribePlaylistUseCase(
-    playlistExtractor,
-    transcribeUseCase,
-    playlistLogger
-  );
   const mcpHandler = new ExpressMCPHandler();
 
-  // Initialize browser pool for batch operations
+  // Initialize browser pool for batch and playlist operations
   const browserPool = getSharedBrowserPool(poolLogger);
   const pooledExtractor = new PooledTranscriptExtractor(browserPool, batchLogger);
   const batchTranscribeUseCase = new BatchTranscribeUseCase(pooledExtractor, batchLogger);
+
+  // Playlist now uses pooled extractor for parallel processing
+  const playlistExtractor = new PlaylistExtractor(browserManager, playlistLogger);
+  const transcribePlaylistUseCase = new TranscribePlaylistUseCase(
+    playlistExtractor,
+    pooledExtractor,
+    playlistLogger
+  );
+
+  // Initialize progress stream for SSE
+  const progressStreamLogger = new Logger('progress-stream');
+  const progressStream = getSharedProgressStream(progressStreamLogger);
 
   // Initialize request queue with environment-based configuration
   const queueMaxConcurrent = parseInt(process.env.QUEUE_MAX_CONCURRENT || '3', 10);
@@ -534,6 +543,161 @@ export function createRouter(): RouterContext {
   //   await mcpHandler.handleMCPRequest(req, res, () => {});
   // }));
 
+  // SSE endpoint for batch progress streaming
+  router.get('/transcribe/batch/progress/:jobId', (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('batch-progress-sse');
+    const { jobId } = req.params;
+
+    logger.info('SSE client connecting for batch progress', {
+      jobId,
+      correlationId: req.correlationId
+    });
+
+    progressStream.addClient(jobId, res);
+  });
+
+  // SSE endpoint for playlist progress streaming
+  router.get('/transcribe/playlist/progress/:jobId', (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('playlist-progress-sse');
+    const { jobId } = req.params;
+
+    logger.info('SSE client connecting for playlist progress', {
+      jobId,
+      correlationId: req.correlationId
+    });
+
+    progressStream.addClient(jobId, res);
+  });
+
+  // Batch transcribe with streaming - returns jobId immediately, streams progress via SSE
+  router.post('/transcribe/batch/stream', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('transcribe-batch-stream');
+
+    // Validate required fields
+    const { urls, format } = req.body;
+
+    if (!urls || !Array.isArray(urls)) {
+      throw new MissingFieldError('urls (array)');
+    }
+
+    if (urls.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: 'URLs array cannot be empty',
+          code: 'EMPTY_URLS_ARRAY',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+      return;
+    }
+
+    const MAX_BATCH_SIZE = parseInt(process.env.BATCH_MAX_SIZE || '50', 10);
+    if (format && !Object.values(TranscriptFormat).includes(format)) {
+      throw new InvalidFormatError(format, Object.values(TranscriptFormat));
+    }
+
+    const request: BatchRequest = {
+      urls: urls.slice(0, MAX_BATCH_SIZE),
+      format: format as TranscriptFormat
+    };
+
+    // Generate job ID and return it immediately
+    const jobId = randomUUID();
+
+    logger.info('Starting streaming batch transcription', {
+      jobId,
+      urlCount: request.urls.length,
+      correlationId: req.correlationId
+    });
+
+    // Return job ID immediately so client can connect to SSE
+    res.json({
+      success: true,
+      data: {
+        jobId,
+        sseEndpoint: `/api/transcribe/batch/progress/${jobId}`,
+        totalUrls: request.urls.length,
+        message: 'Connect to SSE endpoint for progress updates'
+      }
+    });
+
+    // Create progress emitter for this job
+    const progressEmitter = new ProgressEmitter(
+      progressStream,
+      jobId,
+      'batch',
+      request.urls.length
+    );
+
+    // Process in background (don't await)
+    const abortController = new AbortController();
+    batchTranscribeUseCase.execute(request, abortController.signal, progressEmitter)
+      .catch(error => {
+        logger.error('Streaming batch transcription failed', error, { jobId });
+        progressEmitter.failed(error.message);
+      });
+  }));
+
+  // Playlist transcribe with streaming
+  router.post('/transcribe/playlist/stream', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('transcribe-playlist-stream');
+
+    const { url, format, maxVideos } = req.body;
+
+    if (!url) {
+      throw new MissingFieldError('url');
+    }
+
+    if (format && !Object.values(TranscriptFormat).includes(format)) {
+      throw new InvalidFormatError(format, Object.values(TranscriptFormat));
+    }
+
+    const MAX_VIDEOS_LIMIT = parseInt(process.env.PLAYLIST_MAX_VIDEOS_LIMIT || '100', 10);
+    const request: PlaylistRequest = {
+      url,
+      format: format as TranscriptFormat,
+      maxVideos: Math.min(maxVideos || 100, MAX_VIDEOS_LIMIT)
+    };
+
+    // Generate job ID and return it immediately
+    const jobId = randomUUID();
+
+    logger.info('Starting streaming playlist transcription', {
+      jobId,
+      playlistUrl: url,
+      maxVideos: request.maxVideos,
+      correlationId: req.correlationId
+    });
+
+    // Return job ID immediately so client can connect to SSE
+    res.json({
+      success: true,
+      data: {
+        jobId,
+        sseEndpoint: `/api/transcribe/playlist/progress/${jobId}`,
+        message: 'Connect to SSE endpoint for progress updates'
+      }
+    });
+
+    // Create progress emitter for this job
+    const progressEmitter = new ProgressEmitter(
+      progressStream,
+      jobId,
+      'playlist',
+      request.maxVideos || 100
+    );
+
+    // Process in background (don't await)
+    const abortController = new AbortController();
+    transcribePlaylistUseCase.execute(request, abortController.signal, progressEmitter)
+      .catch(error => {
+        logger.error('Streaming playlist transcription failed', error, { jobId });
+        progressEmitter.failed(error.message);
+      });
+  }));
+
   // Cleanup on shutdown
   process.on('SIGTERM', async () => {
     logger.info('SIGTERM received - graceful shutdown initiated');
@@ -545,5 +709,5 @@ export function createRouter(): RouterContext {
     await shutdownSharedPool();
   });
 
-  return { router, requestQueue, browserPool };
+  return { router, requestQueue, browserPool, progressStream };
 }

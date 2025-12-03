@@ -1,6 +1,7 @@
 import { BatchRequest, BatchResponse, BatchVideoResult } from '../domain/BatchTypes';
 import { TranscriptFormat, TranscriptSegment } from '../domain/TranscriptSegment';
 import { PooledTranscriptExtractor } from '../infrastructure/PooledTranscriptExtractor';
+import { ProgressEmitter } from '../infrastructure/ProgressStream';
 import { ILogger } from '../domain/ILogger';
 import { MissingFieldError } from '../domain/errors';
 import { randomUUID } from 'crypto';
@@ -27,7 +28,11 @@ export class BatchTranscribeUseCase {
     this.defaultConcurrency = parseInt(process.env.BATCH_CONCURRENCY || '3', 10);
   }
 
-  async execute(request: BatchRequest, abortSignal?: AbortSignal): Promise<BatchResponse> {
+  async execute(
+    request: BatchRequest,
+    abortSignal?: AbortSignal,
+    progressEmitter?: ProgressEmitter
+  ): Promise<BatchResponse> {
     const batchId = randomUUID();
     const startTime = Date.now();
     const startedAt = new Date().toISOString();
@@ -41,6 +46,7 @@ export class BatchTranscribeUseCase {
     const validatedUrls = this.validateAndDeduplicateUrls(request.urls);
 
     if (validatedUrls.length === 0) {
+      progressEmitter?.failed('No valid YouTube URLs provided');
       return {
         success: false,
         error: {
@@ -62,13 +68,17 @@ export class BatchTranscribeUseCase {
       concurrency
     });
 
+    // Emit started event
+    progressEmitter?.started();
+
     // Process URLs in parallel with concurrency limit
     const results = await this.processUrlsInParallel(
       validatedUrls,
       format,
       concurrency,
       batchId,
-      abortSignal
+      abortSignal,
+      progressEmitter
     );
 
     const successCount = results.filter(r => r.success).length;
@@ -85,6 +95,9 @@ export class BatchTranscribeUseCase {
       totalProcessingTimeMs,
       avgTimePerVideo: Math.round(totalProcessingTimeMs / results.length)
     });
+
+    // Emit completed event
+    progressEmitter?.completed(successCount, failureCount, totalProcessingTimeMs);
 
     return {
       success: true,
@@ -112,7 +125,8 @@ export class BatchTranscribeUseCase {
     format: TranscriptFormat,
     concurrency: number,
     batchId: string,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    progressEmitter?: ProgressEmitter
   ): Promise<BatchVideoResult[]> {
     const results: BatchVideoResult[] = new Array(urls.length);
     let currentIndex = 0;
@@ -125,6 +139,7 @@ export class BatchTranscribeUseCase {
         // Check if aborted
         if (abortSignal?.aborted) {
           this.logger.info('Worker stopping due to abort signal', { workerId, batchId });
+          progressEmitter?.aborted(completedCount);
           return;
         }
 
@@ -135,7 +150,7 @@ export class BatchTranscribeUseCase {
         }
 
         const url = urls[index];
-        const videoId = this.extractVideoId(url);
+        const videoId = this.extractVideoId(url) || 'unknown';
 
         this.logger.info('Worker processing URL', {
           workerId,
@@ -146,9 +161,20 @@ export class BatchTranscribeUseCase {
           completedSoFar: completedCount
         });
 
+        // Emit processing event
+        progressEmitter?.processing(index, videoId, url);
+
         const result = await this.processUrl(url, videoId, format, batchId, abortSignal);
         results[index] = result;
         completedCount++;
+
+        // Emit item completed event
+        progressEmitter?.itemCompleted(
+          index,
+          videoId,
+          result.success,
+          result.error?.message
+        );
 
         this.logger.info('Worker completed URL', {
           workerId,
