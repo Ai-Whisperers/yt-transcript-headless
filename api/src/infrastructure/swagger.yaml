@@ -17,7 +17,7 @@ info:
 
     **Note:** This API uses custom web scraping and does not rely on prohibited libraries like
     youtube-transcript-api, yt-dlp, pytube, or similar third-party YouTube transcript extractors.
-  version: 1.1.0
+  version: 1.2.0
   contact:
     name: AI Whisperers
   license:
@@ -619,6 +619,194 @@ paths:
                       code:
                         type: string
                         example: "QUEUE_TIMEOUT"
+
+  /api/transcribe/batch:
+    post:
+      tags:
+        - Transcript
+      summary: Extract transcripts from multiple YouTube URLs
+      description: |
+        Extracts transcripts from an array of YouTube video URLs using batch processing with browser pooling.
+
+        **Process:**
+        1. Validates and deduplicates URLs
+        2. Processes each video using pooled browser contexts
+        3. Returns results with success/failure breakdown per video
+
+        **Features:**
+        - URL validation and deduplication
+        - Configurable batch size limit (default: 50)
+        - Browser context pooling for efficiency
+        - Per-video timing metrics
+        - Partial failure handling (continues on individual video errors)
+
+        **Rate Limits:**
+        - 5 requests per 5 minutes per IP
+      operationId: transcribeBatch
+      parameters:
+        - in: header
+          name: X-Correlation-ID
+          schema:
+            type: string
+            format: uuid
+          description: Optional correlation ID for request tracing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - urls
+              properties:
+                urls:
+                  type: array
+                  items:
+                    type: string
+                  description: Array of YouTube video URLs
+                  example:
+                    - "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                    - "https://youtu.be/abc123def45"
+                format:
+                  type: string
+                  enum: [json, srt, text]
+                  default: json
+                  description: Output format for transcripts
+      responses:
+        '200':
+          description: Batch transcription completed (may include partial failures)
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Correlation ID for request tracing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      batchId:
+                        type: string
+                        format: uuid
+                        description: Unique identifier for this batch
+                      totalUrls:
+                        type: integer
+                        description: Total URLs submitted (after deduplication)
+                      processedUrls:
+                        type: integer
+                        description: Number of URLs processed
+                      successfulExtractions:
+                        type: integer
+                        description: Number of successful extractions
+                      failedExtractions:
+                        type: integer
+                        description: Number of failed extractions
+                      results:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            videoId:
+                              type: string
+                            videoUrl:
+                              type: string
+                            success:
+                              type: boolean
+                            transcript:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  time:
+                                    type: string
+                                  text:
+                                    type: string
+                            srt:
+                              type: string
+                              nullable: true
+                            text:
+                              type: string
+                              nullable: true
+                            error:
+                              type: object
+                              nullable: true
+                              properties:
+                                message:
+                                  type: string
+                                code:
+                                  type: string
+                            extractedAt:
+                              type: string
+                              format: date-time
+                            processingTimeMs:
+                              type: integer
+                      format:
+                        type: string
+                        enum: [json, srt, text]
+                      startedAt:
+                        type: string
+                        format: date-time
+                      completedAt:
+                        type: string
+                        format: date-time
+                      totalProcessingTimeMs:
+                        type: integer
+        '400':
+          description: Invalid request (missing URLs, empty array, invalid format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingUrls:
+                  summary: Missing required URLs array
+                  value:
+                    success: false
+                    error:
+                      message: 'Missing required field: urls (array)'
+                      code: MISSING_FIELD
+                      timestamp: '2025-12-03T10:30:00.000Z'
+                emptyUrls:
+                  summary: Empty URLs array
+                  value:
+                    success: false
+                    error:
+                      message: 'URLs array cannot be empty'
+                      code: EMPTY_URLS_ARRAY
+                      timestamp: '2025-12-03T10:30:00.000Z'
+                noValidUrls:
+                  summary: No valid YouTube URLs
+                  value:
+                    success: false
+                    error:
+                      message: 'No valid YouTube URLs provided'
+                      code: NO_VALID_URLS
+                      timestamp: '2025-12-03T10:30:00.000Z'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service at capacity (queue full)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Request timed out in queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/formats:
     get:

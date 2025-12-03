@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com/)
 [![Version](https://img.shields.io/badge/version-0.3.0--beta-blue)](https://github.com/Ai-Whisperers/yt-transcript-headless)
 
-**Doc-Type:** Main Documentation · Version 0.3.0-beta · Updated 2025-11-19 · AI Whisperers
+**Doc-Type:** Main Documentation · Version 0.4.0-beta · Updated 2025-12-03 · AI Whisperers
 
 A production-ready headless YouTube transcript extraction service built with Playwright, featuring advanced error handling, observability, and MCP protocol support.
 
@@ -31,6 +31,15 @@ A production-ready headless YouTube transcript extraction service built with Pla
 This project provides a robust solution for extracting YouTube video transcripts using headless browser automation. It implements stealth techniques and human-like behavior patterns to reliably extract transcripts from YouTube's embedded transcript feature.
 
 ### Recent Updates
+
+**v0.4.0-beta (2025-12-03) - Batch Processing & Browser Pooling:**
+- Added `POST /api/transcribe/batch` endpoint for batch URL processing
+- Implemented BrowserPool for efficient browser context reuse
+- Added PooledTranscriptExtractor for batch operations
+- Added BatchTranscribeUseCase with URL validation and deduplication
+- Architecture prepared for parallel processing (sequential currently)
+- New environment variables for batch and pool configuration
+- Updated health endpoint with browser pool statistics
 
 **v0.3.0-beta (2025-11-19) - Code Quality & Documentation:**
 - Removed dead code (BrowserManager.autoScroll static method)
@@ -69,6 +78,9 @@ This project provides a robust solution for extracting YouTube video transcripts
 
 - **Headless Operation:** Runs without UI rendering for optimal performance
 - **Disposable Browser Pattern:** Resource cleanup with automatic browser lifecycle management
+- **Browser Pooling:** Reusable browser contexts for efficient batch operations
+- **Batch URL Processing:** Process multiple YouTube URLs in a single request
+- **Playlist Support:** Extract transcripts from entire YouTube playlists
 - **Enhanced URL Validation:** Comprehensive YouTube URL format validation with detailed error messages
 - **Stealth Mode:** Anti-detection measures including user agent spoofing, plugin mocking, and randomized delays
 - **Advanced Error Handling:** Structured error responses with operational error classification
@@ -87,15 +99,26 @@ The project follows hexagonal architecture principles with clear separation of c
 PROJECT/
 ├── api/                    # Headless transcript microservice
 │   ├── src/
-│   │   ├── application/    # Use cases (TranscribeVideoUseCase)
-│   │   ├── domain/         # Models (TranscriptSegment) + Errors (AppError, OperationalError, ValidationError)
+│   │   ├── application/    # Use cases
+│   │   │   ├── TranscribeVideoUseCase.ts      # Single video extraction
+│   │   │   ├── TranscribePlaylistUseCase.ts   # Playlist extraction
+│   │   │   └── BatchTranscribeUseCase.ts      # Batch URL extraction
+│   │   ├── domain/         # Models + Errors
+│   │   │   ├── TranscriptSegment.ts           # Core transcript types
+│   │   │   ├── PlaylistTypes.ts               # Playlist request/response
+│   │   │   ├── BatchTypes.ts                  # Batch request/response
+│   │   │   └── errors/                        # Error hierarchy
 │   │   ├── infrastructure/ # Playwright engine, REST endpoints, middleware
-│   │   │   ├── BrowserManager.ts          # Browser lifecycle with stealth config
-│   │   │   ├── TranscriptExtractor.ts     # Extraction logic with retry
+│   │   │   ├── BrowserManager.ts          # Disposable browser instances
+│   │   │   ├── BrowserPool.ts             # Reusable browser context pool
+│   │   │   ├── TranscriptExtractor.ts     # Extraction with BrowserManager
+│   │   │   ├── PooledTranscriptExtractor.ts  # Extraction with BrowserPool
+│   │   │   ├── PlaylistExtractor.ts       # Playlist video ID extraction
+│   │   │   ├── RequestQueue.ts            # Concurrency control
 │   │   │   ├── Logger.ts                  # Winston logging
 │   │   │   ├── routes.ts                  # Express routes
 │   │   │   ├── middleware/                # Observability & error handling
-│   │   │   ├── utils/                     # Shared utilities (async-helpers, error-handlers)
+│   │   │   ├── utils/                     # Shared utilities
 │   │   │   └── swagger.yaml               # OpenAPI 3.0 spec
 │   │   └── mcp/            # Model Context Protocol server
 │   │       ├── mcp-server.ts              # MCP standalone server
@@ -220,8 +243,9 @@ Content-Type: application/json
 **Additional Endpoints:**
 - `GET /api/health` - Health check endpoint with memory metrics
 - `GET /api/health/browser` - Browser health check (60s cache)
-- `GET /api/metrics` - Observability metrics (requests, errors, latencies, queue stats, browser lifecycle)
-- `POST /api/transcribe/playlist` - Batch playlist transcription
+- `GET /api/metrics` - Observability metrics (requests, errors, latencies, queue stats)
+- `POST /api/transcribe/playlist` - Playlist transcription (YouTube playlist URLs)
+- `POST /api/transcribe/batch` - Batch URL transcription (array of video URLs)
 - `GET /api/formats` - Get supported transcript formats
 - `GET /api-docs` - Interactive Swagger UI documentation
 
@@ -277,6 +301,49 @@ Content-Type: application/json
 - `QUEUE_FULL` - Service at capacity (503)
 - `QUEUE_TIMEOUT` - Request timed out in queue (504)
 - `EMPTY_PLAYLIST` - Playlist contains no videos
+- `NO_VALID_URLS` - Batch contains no valid YouTube URLs
+
+### Batch URL Endpoint
+
+**Request:**
+```json
+{
+  "urls": [
+    "https://www.youtube.com/watch?v=VIDEO_ID_1",
+    "https://www.youtube.com/watch?v=VIDEO_ID_2",
+    "https://youtu.be/VIDEO_ID_3"
+  ],
+  "format": "json"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "batchId": "uuid-here",
+    "totalUrls": 3,
+    "processedUrls": 3,
+    "successfulExtractions": 2,
+    "failedExtractions": 1,
+    "results": [
+      {
+        "videoId": "VIDEO_ID_1",
+        "videoUrl": "https://www.youtube.com/watch?v=VIDEO_ID_1",
+        "success": true,
+        "transcript": [...],
+        "extractedAt": "2025-12-03T12:00:00Z",
+        "processingTimeMs": 5000
+      }
+    ],
+    "format": "json",
+    "startedAt": "2025-12-03T12:00:00Z",
+    "completedAt": "2025-12-03T12:00:15Z",
+    "totalProcessingTimeMs": 15000
+  }
+}
+```
 
 ### MCP Protocol Integration
 
@@ -383,6 +450,22 @@ QUEUE_TIMEOUT_MS=60000            # Queue timeout (ms)
 # Browser Configuration
 TIMEOUT_MS=30000                  # Page navigation timeout
 ENABLE_STEALTH=true               # Enable anti-detection (stealth techniques)
+
+# Playlist Configuration
+PLAYLIST_RATE_LIMIT_WINDOW=300000 # Playlist rate limit window (5 min)
+PLAYLIST_RATE_LIMIT_MAX=3         # Max playlist requests per window
+PLAYLIST_MAX_VIDEOS_LIMIT=100     # Max videos per playlist
+
+# Batch Configuration
+BATCH_RATE_LIMIT_WINDOW=300000    # Batch rate limit window (5 min)
+BATCH_RATE_LIMIT_MAX=5            # Max batch requests per window
+BATCH_MAX_SIZE=50                 # Max URLs per batch request
+
+# Browser Pool Configuration (for batch operations)
+POOL_MAX_CONTEXTS=5               # Max browser contexts in pool
+POOL_CONTEXT_MAX_AGE=300000       # Context max age before recycling (5 min)
+POOL_CONTEXT_MAX_USES=10          # Max extractions per context
+POOL_ACQUIRE_TIMEOUT=30000        # Timeout waiting for available context
 ```
 
 ## Development

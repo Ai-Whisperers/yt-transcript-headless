@@ -1,5 +1,5 @@
 # YouTube Transcript Extractor - Project Standards
-Doc-Type: Project-Level Configuration · Version 1.0.0 · Updated 2025-11-15 · AI Whisperers
+Doc-Type: Project-Level Configuration · Version 1.1.0 · Updated 2025-12-03 · AI Whisperers
 
 ## Purpose & Scope
 
@@ -33,14 +33,23 @@ Strict adherence to hexagonal architecture with three distinct layers:
 ```
 api/src/
 ├── domain/              # Pure business logic, no dependencies
-│   └── TranscriptSegment.ts   # Domain models, interfaces, enums
+│   ├── TranscriptSegment.ts   # Domain models, interfaces, enums
+│   ├── PlaylistTypes.ts       # Playlist request/response types
+│   ├── BatchTypes.ts          # Batch URL request/response types
+│   └── errors/                # Structured error hierarchy
 ├── application/         # Use cases orchestrating domain logic
-│   └── TranscribeVideoUseCase.ts
+│   ├── TranscribeVideoUseCase.ts      # Single video extraction
+│   ├── TranscribePlaylistUseCase.ts   # Playlist extraction
+│   └── BatchTranscribeUseCase.ts      # Batch URL extraction
 └── infrastructure/      # External concerns (HTTP, browser, logging)
-    ├── routes.ts        # Express route handlers
-    ├── BrowserManager.ts
-    ├── TranscriptExtractor.ts
-    └── Logger.ts
+    ├── routes.ts                # Express route handlers
+    ├── BrowserManager.ts        # Disposable browser instances
+    ├── BrowserPool.ts           # Reusable browser context pool
+    ├── TranscriptExtractor.ts   # Extraction with BrowserManager
+    ├── PooledTranscriptExtractor.ts  # Extraction with BrowserPool
+    ├── PlaylistExtractor.ts     # Playlist video ID extraction
+    ├── RequestQueue.ts          # Concurrency control
+    └── Logger.ts                # Winston logging
 ```
 
 **Rules:**
@@ -71,9 +80,14 @@ export class TranscribeVideoUseCase {
 ### Single Responsibility Principle
 
 Each class serves exactly one purpose:
-- BrowserManager: Browser lifecycle and stealth configuration
-- TranscriptExtractor: Transcript extraction logic with retry mechanism
-- TranscribeVideoUseCase: Orchestrate extraction workflow
+- BrowserManager: Disposable browser instances with stealth configuration
+- BrowserPool: Reusable browser context pool for batch operations
+- TranscriptExtractor: Transcript extraction with disposable browsers
+- PooledTranscriptExtractor: Transcript extraction with pooled contexts
+- TranscribeVideoUseCase: Orchestrate single video extraction
+- TranscribePlaylistUseCase: Orchestrate playlist extraction
+- BatchTranscribeUseCase: Orchestrate batch URL extraction
+- RequestQueue: Concurrency control and queue management
 - Logger: Centralized logging with Winston
 
 ---
@@ -237,9 +251,30 @@ RATE_LIMIT_MAX=10
 
 **Optional Variables:**
 ```env
-MAX_CONCURRENT_BROWSERS=5
+# Browser Configuration
 TIMEOUT_MS=30000
 ENABLE_STEALTH=true
+
+# Request Queue
+QUEUE_MAX_CONCURRENT=3
+QUEUE_MAX_SIZE=100
+QUEUE_TIMEOUT_MS=60000
+
+# Playlist Configuration
+PLAYLIST_RATE_LIMIT_WINDOW=300000
+PLAYLIST_RATE_LIMIT_MAX=3
+PLAYLIST_MAX_VIDEOS_LIMIT=100
+
+# Batch Configuration
+BATCH_RATE_LIMIT_WINDOW=300000
+BATCH_RATE_LIMIT_MAX=5
+BATCH_MAX_SIZE=50
+
+# Browser Pool Configuration
+POOL_MAX_CONTEXTS=5
+POOL_CONTEXT_MAX_AGE=300000
+POOL_CONTEXT_MAX_USES=10
+POOL_ACQUIRE_TIMEOUT=30000
 ```
 
 ### Git Workflow
@@ -358,9 +393,13 @@ resources:
 ### RESTful Conventions
 
 **Endpoints:**
-- `GET /api/health` - Health check
-- `POST /api/transcribe` - Extract transcript
+- `GET /api/health` - Health check with memory and queue stats
+- `GET /api/health/browser` - Browser health check (60s cache)
+- `POST /api/transcribe` - Extract single video transcript
+- `POST /api/transcribe/playlist` - Extract playlist transcripts
+- `POST /api/transcribe/batch` - Extract batch URL transcripts
 - `GET /api/formats` - Get supported formats
+- `GET /api/metrics` - Observability metrics
 
 **Response Format:**
 ```typescript
@@ -578,9 +617,10 @@ When extending this project, maintain these principles:
 **Potential Features:**
 - Multiple language support for transcripts
 - Transcript translation service integration
-- Batch processing endpoint for multiple videos
-- WebSocket streaming for real-time extraction updates
+- Parallel batch processing (architecture ready, implementation pending)
+- WebSocket/SSE streaming for real-time extraction progress
 - Caching layer (Redis) for frequently accessed transcripts
+- Progress tracking API for long-running batch operations
 
 **Architecture Preservation:**
 - Keep domain logic pure and testable
@@ -623,6 +663,7 @@ kubectl apply -f k8s/deployment.yaml
 
 | Date       | Version | Description                              |
 |:-----------|:--------|:-----------------------------------------|
+| 2025-12-03 | v1.1.0  | Added batch URL endpoint, browser pooling architecture |
 | 2025-11-15 | v1.0.0  | Initial project standards documentation  |
 
 ---
