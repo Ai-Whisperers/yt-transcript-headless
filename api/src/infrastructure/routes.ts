@@ -8,6 +8,7 @@ import { PooledTranscriptExtractor } from './PooledTranscriptExtractor';
 import { BrowserManager } from './BrowserManager';
 import { BrowserPool, getSharedBrowserPool, shutdownSharedPool } from './BrowserPool';
 import { ProgressStream, ProgressEmitter, getSharedProgressStream } from './ProgressStream';
+import { RepositoryFactory } from './database/RepositoryFactory';
 import { Logger } from './Logger';
 import { TranscriptRequest, TranscriptFormat } from '../domain/TranscriptSegment';
 import { PlaylistRequest } from '../domain/PlaylistTypes';
@@ -27,6 +28,7 @@ export interface RouterContext {
   requestQueue: RequestQueue;
   browserPool: BrowserPool;
   progressStream: ProgressStream;
+  repositoryFactory?: RepositoryFactory;
 }
 
 export function createRouter(): RouterContext {
@@ -47,7 +49,38 @@ export function createRouter(): RouterContext {
   // Initialize browser pool for batch and playlist operations
   const browserPool = getSharedBrowserPool(poolLogger);
   const pooledExtractor = new PooledTranscriptExtractor(browserPool, batchLogger);
-  const batchTranscribeUseCase = new BatchTranscribeUseCase(pooledExtractor, batchLogger);
+
+  // Initialize repository factory for persistence (optional, based on environment variable)
+  const enablePersistence = process.env.ENABLE_PERSISTENCE === 'true';
+  let repositoryFactory: RepositoryFactory | undefined;
+  let cacheRepository: ReturnType<RepositoryFactory['getCacheRepository']> | undefined = undefined;
+  let jobRepository: ReturnType<RepositoryFactory['getJobRepository']> | undefined = undefined;
+
+  if (enablePersistence) {
+    try {
+      const repoLogger = new Logger('repository-factory');
+      repositoryFactory = RepositoryFactory.getInstance(repoLogger);
+      cacheRepository = repositoryFactory.getCacheRepository();
+      jobRepository = repositoryFactory.getJobRepository();
+      logger.info('Persistence enabled', {
+        cacheEnabled: !!cacheRepository,
+        jobTrackingEnabled: !!jobRepository
+      });
+    } catch (error: any) {
+      logger.error('Failed to initialize persistence layer', error);
+      logger.warn('Continuing without persistence - caching and job tracking disabled');
+    }
+  } else {
+    logger.info('Persistence disabled - set ENABLE_PERSISTENCE=true to enable caching');
+  }
+
+  // Initialize use cases with optional repositories
+  const batchTranscribeUseCase = new BatchTranscribeUseCase(
+    pooledExtractor,
+    batchLogger,
+    cacheRepository,
+    jobRepository
+  );
 
   // Playlist now uses pooled extractor for parallel processing
   const playlistExtractor = new PlaylistExtractor(browserManager, playlistLogger);
@@ -707,7 +740,11 @@ export function createRouter(): RouterContext {
   process.on('SIGINT', async () => {
     logger.info('SIGINT received - graceful shutdown initiated');
     await shutdownSharedPool();
+    if (repositoryFactory) {
+      logger.info('Closing database connections');
+      repositoryFactory.close();
+    }
   });
 
-  return { router, requestQueue, browserPool, progressStream };
+  return { router, requestQueue, browserPool, progressStream, repositoryFactory };
 }

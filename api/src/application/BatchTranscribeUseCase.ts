@@ -3,6 +3,10 @@ import { TranscriptFormat, TranscriptSegment } from '../domain/TranscriptSegment
 import { PooledTranscriptExtractor } from '../infrastructure/PooledTranscriptExtractor';
 import { ProgressEmitter } from '../infrastructure/ProgressStream';
 import { ILogger } from '../domain/ILogger';
+import { ICacheRepository } from '../domain/repositories/ICacheRepository';
+import { IJobRepository } from '../domain/repositories/IJobRepository';
+import { Job, JobStatus } from '../domain/Job';
+import { CachedTranscript } from '../domain/CachedTranscript';
 import { MissingFieldError } from '../domain/errors';
 import { randomUUID } from 'crypto';
 
@@ -15,15 +19,26 @@ import { randomUUID } from 'crypto';
  * - URL validation and deduplication
  * - Abort signal support for cancellation
  * - Per-video timing metrics
+ * - Optional transcript caching (cache-first lookup)
+ * - Optional job tracking for progress monitoring
  */
 export class BatchTranscribeUseCase {
   private extractor: PooledTranscriptExtractor;
   private logger: ILogger;
   private defaultConcurrency: number;
+  private cacheRepository?: ICacheRepository;
+  private jobRepository?: IJobRepository;
 
-  constructor(extractor: PooledTranscriptExtractor, logger: ILogger) {
+  constructor(
+    extractor: PooledTranscriptExtractor,
+    logger: ILogger,
+    cacheRepository?: ICacheRepository,
+    jobRepository?: IJobRepository
+  ) {
     this.extractor = extractor;
     this.logger = logger;
+    this.cacheRepository = cacheRepository;
+    this.jobRepository = jobRepository;
     // Default concurrency matches browser pool size
     this.defaultConcurrency = parseInt(process.env.BATCH_CONCURRENCY || '3', 10);
   }
@@ -60,40 +75,80 @@ export class BatchTranscribeUseCase {
     const format = request.format || TranscriptFormat.JSON;
     const concurrency = request.concurrency || this.defaultConcurrency;
 
+    // Create job record for tracking
+    await this.createJobRecord(batchId, validatedUrls.length, format);
+
     this.logger.info('Starting parallel batch transcription', {
       batchId,
       totalUrls: validatedUrls.length,
       originalUrlCount: request.urls.length,
       format,
-      concurrency
+      concurrency,
+      cacheEnabled: !!this.cacheRepository
+    });
+
+    // Check cache for existing transcripts
+    const cachedResults = await this.loadFromCache(validatedUrls, format);
+
+    // Filter URLs that need extraction (not in cache)
+    const urlsToExtract = validatedUrls.filter(url => {
+      const videoId = this.extractVideoId(url);
+      return !videoId || !cachedResults.has(videoId);
+    });
+
+    this.logger.info('Cache lookup completed', {
+      batchId,
+      totalUrls: validatedUrls.length,
+      cacheHits: cachedResults.size,
+      urlsToExtract: urlsToExtract.length
     });
 
     // Emit started event
     progressEmitter?.started();
 
-    // Process URLs in parallel with concurrency limit
-    const results = await this.processUrlsInParallel(
-      validatedUrls,
-      format,
-      concurrency,
-      batchId,
-      abortSignal,
-      progressEmitter
-    );
+    // Process only URLs not in cache
+    let freshResults: BatchVideoResult[] = [];
+    if (urlsToExtract.length > 0) {
+      freshResults = await this.processUrlsInParallel(
+        urlsToExtract,
+        format,
+        concurrency,
+        batchId,
+        abortSignal,
+        progressEmitter
+      );
 
-    const successCount = results.filter(r => r.success).length;
-    const failureCount = results.filter(r => !r.success).length;
+      // Save fresh results to cache
+      await this.saveToCache(freshResults.filter(r => r.success));
+    }
+
+    // Merge cached and fresh results
+    const allResults: BatchVideoResult[] = [
+      ...Array.from(cachedResults.values()),
+      ...freshResults
+    ];
+
+    const successCount = allResults.filter(r => r.success).length;
+    const failureCount = allResults.filter(r => !r.success).length;
     const totalProcessingTimeMs = Date.now() - startTime;
     const completedAt = new Date().toISOString();
+
+    // Update job progress
+    await this.updateJobProgress(batchId, allResults.length, successCount, failureCount);
+
+    // Complete job record
+    await this.completeJobRecord(batchId);
 
     this.logger.info('Batch transcription completed', {
       batchId,
       totalUrls: validatedUrls.length,
-      processedUrls: results.length,
+      processedUrls: allResults.length,
+      cachedResults: cachedResults.size,
+      freshExtractions: freshResults.length,
       successfulExtractions: successCount,
       failedExtractions: failureCount,
       totalProcessingTimeMs,
-      avgTimePerVideo: Math.round(totalProcessingTimeMs / results.length)
+      avgTimePerVideo: allResults.length > 0 ? Math.round(totalProcessingTimeMs / allResults.length) : 0
     });
 
     // Emit completed event
@@ -104,10 +159,10 @@ export class BatchTranscribeUseCase {
       data: {
         batchId,
         totalUrls: validatedUrls.length,
-        processedUrls: results.length,
+        processedUrls: allResults.length,
         successfulExtractions: successCount,
         failedExtractions: failureCount,
-        results,
+        results: allResults,
         format,
         startedAt,
         completedAt,
@@ -418,4 +473,178 @@ export class BatchTranscribeUseCase {
     }
     return '00:03';
   }
+
+  /**
+   * Check cache for existing transcripts
+   * Returns map of videoId -> cached transcript
+   */
+  private async loadFromCache(urls: string[], format: TranscriptFormat): Promise<Map<string, BatchVideoResult>> {
+    if (!this.cacheRepository) {
+      return new Map();
+    }
+
+    try {
+      const videoIds = urls
+        .map(url => this.extractVideoId(url))
+        .filter((id): id is string => id !== null);
+
+      const cachedTranscripts = await this.cacheRepository.getTranscripts(videoIds);
+
+      this.logger.info('Cache lookup results', {
+        requested: videoIds.length,
+        cacheHits: cachedTranscripts.size
+      });
+
+      // Convert cached transcripts to BatchVideoResult format
+      const results = new Map<string, BatchVideoResult>();
+      for (const [videoId, cached] of cachedTranscripts) {
+        const result: BatchVideoResult = {
+          videoId: cached.videoId,
+          videoUrl: cached.videoUrl,
+          success: !cached.errorCode,
+          transcript: cached.transcript,
+          extractedAt: cached.extractedAt,
+          processingTimeMs: cached.extractionTimeMs
+        };
+
+        // Add formatted outputs based on requested format
+        if (format === TranscriptFormat.SRT && cached.srt) {
+          result.srt = cached.srt;
+        } else if (format === TranscriptFormat.SRT && !cached.srt && cached.transcript) {
+          result.srt = this.formatAsSRT(cached.transcript);
+        }
+
+        if (format === TranscriptFormat.TEXT && cached.text) {
+          result.text = cached.text;
+        } else if (format === TranscriptFormat.TEXT && !cached.text && cached.transcript) {
+          result.text = this.formatAsText(cached.transcript);
+        }
+
+        if (cached.errorCode) {
+          result.error = {
+            message: cached.errorMessage || 'Unknown error',
+            code: cached.errorCode
+          };
+        }
+
+        results.set(videoId, result);
+      }
+
+      return results;
+    } catch (error: any) {
+      this.logger.error('Failed to load from cache', error);
+      return new Map();
+    }
+  }
+
+  /**
+   * Save successful extraction results to cache
+   */
+  private async saveToCache(results: BatchVideoResult[]): Promise<void> {
+    if (!this.cacheRepository || results.length === 0) {
+      return;
+    }
+
+    try {
+      const transcriptsToCache: CachedTranscript[] = results.map(result => ({
+        videoId: result.videoId,
+        videoUrl: result.videoUrl,
+        transcript: result.transcript || [],
+        srt: result.srt,
+        text: result.text,
+        extractedAt: result.extractedAt || new Date().toISOString(),
+        lastAccessedAt: new Date().toISOString(),
+        accessCount: 1,
+        extractionTimeMs: result.processingTimeMs,
+        errorCode: result.error?.code,
+        errorMessage: result.error?.message
+      }));
+
+      await this.cacheRepository.saveTranscripts(transcriptsToCache);
+
+      this.logger.info('Saved results to cache', {
+        count: transcriptsToCache.length
+      });
+    } catch (error: any) {
+      this.logger.error('Failed to save to cache', error);
+      // Don't throw - caching is non-critical
+    }
+  }
+
+  /**
+   * Create job record for tracking
+   */
+  private async createJobRecord(jobId: string, totalUrls: number, format: string): Promise<void> {
+    if (!this.jobRepository) {
+      return;
+    }
+
+    try {
+      const job: Job = {
+        id: jobId,
+        type: 'batch',
+        status: JobStatus.PENDING,
+        totalItems: totalUrls,
+        processedItems: 0,
+        successfulItems: 0,
+        failedItems: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        metadata: {
+          format
+        }
+      };
+
+      await this.jobRepository.createJob(job);
+
+      this.logger.debug('Job record created', { jobId });
+    } catch (error: any) {
+      this.logger.error('Failed to create job record', error, { jobId });
+      // Don't throw - job tracking is non-critical
+    }
+  }
+
+  /**
+   * Update job progress
+   */
+  private async updateJobProgress(
+    jobId: string,
+    processedItems: number,
+    successfulItems: number,
+    failedItems: number
+  ): Promise<void> {
+    if (!this.jobRepository) {
+      return;
+    }
+
+    try {
+      await this.jobRepository.updateJobProgress(
+        jobId,
+        processedItems,
+        successfulItems,
+        failedItems
+      );
+    } catch (error: any) {
+      this.logger.error('Failed to update job progress', error, { jobId });
+      // Don't throw - job tracking is non-critical
+    }
+  }
+
+  /**
+   * Complete job record
+   */
+  private async completeJobRecord(jobId: string): Promise<void> {
+    if (!this.jobRepository) {
+      return;
+    }
+
+    try {
+      await this.jobRepository.completeJob(jobId);
+      this.logger.debug('Job record completed', { jobId });
+    } catch (error: any) {
+      this.logger.error('Failed to complete job record', error, { jobId });
+      // Don't throw - job tracking is non-critical
+    }
+  }
 }
+

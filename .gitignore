@@ -77,3 +77,11 @@ desktop.ini
 *.temp
 .temp/
 .tmp/
+
+# Database files
+api/data/*.db
+api/data/*.db-shm
+api/data/*.db-wal
+api/data/backups/*.db
+*.duckdb
+*.duckdb.wal
