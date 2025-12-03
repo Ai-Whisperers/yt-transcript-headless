@@ -82,6 +82,51 @@ export interface PlaylistResponse {
   };
 }
 
+// Batch types for processing arrays of URLs
+export interface BatchRequest {
+  urls: string[];
+  format?: TranscriptFormat;
+}
+
+export interface BatchVideoResult {
+  videoId: string;
+  videoUrl: string;
+  videoTitle?: string;
+  success: boolean;
+  transcript?: TranscriptSegment[];
+  srt?: string;
+  text?: string;
+  error?: {
+    message: string;
+    code: string;
+  };
+  extractedAt?: string;
+  processingTimeMs?: number;
+}
+
+export interface BatchResponse {
+  success: boolean;
+  data?: {
+    batchId: string;
+    totalUrls: number;
+    processedUrls: number;
+    successfulExtractions: number;
+    failedExtractions: number;
+    results: BatchVideoResult[];
+    format: TranscriptFormat;
+    startedAt: string;
+    completedAt: string;
+    totalProcessingTimeMs: number;
+  };
+  error?: {
+    message: string;
+    code: string;
+    timestamp: string;
+    correlationId?: string;
+    context?: any;
+  };
+}
+
 export interface HealthResponse {
   status: string;
   timestamp: string;
@@ -209,6 +254,34 @@ class TranscriptAPI {
         {
           headers: { 'X-Correlation-ID': correlationId },
           timeout: 300000 // 5 minutes for playlists
+        }
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.data) return error.response.data;
+
+      return {
+        success: false,
+        error: {
+          message: error.message || 'Network error',
+          code: 'NETWORK_ERROR',
+          timestamp: new Date().toISOString(),
+          correlationId
+        }
+      };
+    }
+  }
+
+  async extractBatch(request: BatchRequest): Promise<BatchResponse> {
+    const correlationId = crypto.randomUUID();
+
+    try {
+      const response = await this.client.post<BatchResponse>(
+        '/transcribe/batch',
+        request,
+        {
+          headers: { 'X-Correlation-ID': correlationId },
+          timeout: 600000 // 10 minutes for batch operations
         }
       );
       return response.data;

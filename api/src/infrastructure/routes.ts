@@ -1,12 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { TranscribeVideoUseCase } from '../application/TranscribeVideoUseCase';
 import { TranscribePlaylistUseCase } from '../application/TranscribePlaylistUseCase';
+import { BatchTranscribeUseCase } from '../application/BatchTranscribeUseCase';
 import { TranscriptExtractor } from './TranscriptExtractor';
 import { PlaylistExtractor } from './PlaylistExtractor';
+import { PooledTranscriptExtractor } from './PooledTranscriptExtractor';
 import { BrowserManager } from './BrowserManager';
+import { BrowserPool, getSharedBrowserPool, shutdownSharedPool } from './BrowserPool';
 import { Logger } from './Logger';
 import { TranscriptRequest, TranscriptFormat } from '../domain/TranscriptSegment';
 import { PlaylistRequest } from '../domain/PlaylistTypes';
+import { BatchRequest } from '../domain/BatchTypes';
 import { asyncHandler, metricsCollector } from './middleware';
 import {
   MissingFieldError,
@@ -19,6 +23,7 @@ import { sendQueueFullError } from './utils/error-handlers';
 export interface RouterContext {
   router: Router;
   requestQueue: RequestQueue;
+  browserPool: BrowserPool;
 }
 
 export function createRouter(): RouterContext {
@@ -27,6 +32,8 @@ export function createRouter(): RouterContext {
   const browserLogger = new Logger('browser-manager');
   const queueLogger = new Logger('request-queue');
   const playlistLogger = new Logger('playlist-extractor');
+  const batchLogger = new Logger('batch-extractor');
+  const poolLogger = new Logger('browser-pool');
 
   // Initialize shared components
   const browserManager = new BrowserManager(browserLogger);
@@ -39,6 +46,11 @@ export function createRouter(): RouterContext {
     playlistLogger
   );
   const mcpHandler = new ExpressMCPHandler();
+
+  // Initialize browser pool for batch operations
+  const browserPool = getSharedBrowserPool(poolLogger);
+  const pooledExtractor = new PooledTranscriptExtractor(browserPool, batchLogger);
+  const batchTranscribeUseCase = new BatchTranscribeUseCase(pooledExtractor, batchLogger);
 
   // Initialize request queue with environment-based configuration
   const queueMaxConcurrent = parseInt(process.env.QUEUE_MAX_CONCURRENT || '3', 10);
@@ -92,6 +104,7 @@ export function createRouter(): RouterContext {
         usagePercent: parseFloat(memoryUsagePercent.toFixed(2))
       },
       queue: requestQueue.getStats(),
+      browserPool: browserPool.getStats(),
       correlationId: req.correlationId
     };
 
@@ -397,6 +410,118 @@ export function createRouter(): RouterContext {
     }
   }));
 
+  // Batch transcribe endpoint - accepts array of URLs
+  router.post('/transcribe/batch', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('transcribe-batch');
+    const startTime = Date.now();
+
+    // Validate required fields before queueing
+    const { urls, format } = req.body;
+
+    if (!urls || !Array.isArray(urls)) {
+      throw new MissingFieldError('urls (array)');
+    }
+
+    if (urls.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: 'URLs array cannot be empty',
+          code: 'EMPTY_URLS_ARRAY',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+      return;
+    }
+
+    // Validate and cap batch size
+    const MAX_BATCH_SIZE = parseInt(process.env.BATCH_MAX_SIZE || '50', 10);
+    if (urls.length > MAX_BATCH_SIZE) {
+      logger.warn('Batch size exceeds limit, capping to maximum', {
+        requested: urls.length,
+        capped: MAX_BATCH_SIZE,
+        correlationId: req.correlationId
+      });
+    }
+
+    if (format && !Object.values(TranscriptFormat).includes(format)) {
+      throw new InvalidFormatError(format, Object.values(TranscriptFormat));
+    }
+
+    const request: BatchRequest = {
+      urls: urls.slice(0, MAX_BATCH_SIZE),
+      format: format as TranscriptFormat
+    };
+
+    logger.info('Queueing batch transcription', {
+      urlCount: request.urls.length,
+      originalUrlCount: urls.length,
+      format: format || 'default',
+      correlationId: req.correlationId,
+      queueStats: requestQueue.getStats(),
+      poolStats: browserPool.getStats()
+    });
+
+    try {
+      // Queue the batch extraction task
+      const result = await requestQueue.add(async () => {
+        // Create AbortController to handle client disconnects
+        const abortController = new AbortController();
+
+        // Abort if client disconnects
+        req.on('close', () => {
+          logger.warn('Client disconnected - aborting batch extraction', {
+            correlationId: req.correlationId
+          });
+          abortController.abort();
+        });
+
+        logger.info('Starting batch transcription from queue', {
+          urlCount: request.urls.length,
+          correlationId: req.correlationId
+        });
+
+        const batchResult = await batchTranscribeUseCase.execute(request, abortController.signal);
+        return batchResult;
+      });
+
+      const duration = Date.now() - startTime;
+      logger.metric('transcribe-batch', duration, {
+        urlCount: request.urls.length,
+        correlationId: req.correlationId,
+        processedUrls: result.data?.processedUrls || 0,
+        successfulExtractions: result.data?.successfulExtractions || 0
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      // Handle queue-specific errors
+      if (error.message === 'Queue is full. Please try again later.') {
+        sendQueueFullError(res, req.correlationId, requestQueue);
+        return;
+      }
+
+      if (error.message === 'Request timed out in queue') {
+        res.status(504).json({
+          success: false,
+          error: {
+            message: 'Request timed out waiting in queue',
+            code: 'QUEUE_TIMEOUT',
+            timestamp: new Date().toISOString(),
+            correlationId: req.correlationId,
+            context: {
+              queueStats: requestQueue.getStats()
+            }
+          }
+        });
+        return;
+      }
+
+      throw error;
+    }
+  }));
+
   // MCP endpoint temporarily disabled - needs MCP handler fixes
   // router.post('/mcp', asyncHandler(async (req: Request, res: Response) => {
   //   const logger = req.logger || new Logger('mcp');
@@ -409,14 +534,16 @@ export function createRouter(): RouterContext {
   //   await mcpHandler.handleMCPRequest(req, res, () => {});
   // }));
 
-  // Cleanup on shutdown (no longer needed with disposable browsers, but kept for compatibility)
+  // Cleanup on shutdown
   process.on('SIGTERM', async () => {
     logger.info('SIGTERM received - graceful shutdown initiated');
+    await shutdownSharedPool();
   });
 
   process.on('SIGINT', async () => {
     logger.info('SIGINT received - graceful shutdown initiated');
+    await shutdownSharedPool();
   });
 
-  return { router, requestQueue };
+  return { router, requestQueue, browserPool };
 }

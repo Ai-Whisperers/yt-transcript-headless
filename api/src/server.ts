@@ -61,6 +61,16 @@ const playlistLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Rate limiting for batch endpoint (resource intensive)
+const batchLimiter = rateLimit({
+  windowMs: parseInt(process.env.BATCH_RATE_LIMIT_WINDOW || '300000'), // 5 minutes default
+  max: parseInt(process.env.BATCH_RATE_LIMIT_MAX || '5'), // 5 requests per window
+  message: 'Too many batch requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/transcribe/batch', batchLimiter);
 app.use('/api/transcribe/playlist', playlistLimiter);
 app.use('/api/transcribe', limiter);
 
@@ -96,7 +106,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
 }));
 
 // API routes
-const { router, requestQueue } = createRouter();
+const { router, requestQueue, browserPool } = createRouter();
 app.use('/api', router);
 
 // Serve static frontend files in production
@@ -125,6 +135,8 @@ if (process.env.NODE_ENV === 'production') {
       endpoints: {
         health: 'GET /api/health',
         transcribe: 'POST /api/transcribe',
+        transcribeBatch: 'POST /api/transcribe/batch',
+        transcribePlaylist: 'POST /api/transcribe/playlist',
         formats: 'GET /api/formats'
       }
     });
@@ -157,6 +169,15 @@ const gracefulShutdown = async () => {
     logger.info('Request queue drained successfully');
   } catch (error) {
     logger.error('Error draining request queue', error instanceof Error ? error : new Error(String(error)));
+  }
+
+  // Shutdown browser pool
+  try {
+    logger.info('Shutting down browser pool...');
+    await browserPool.shutdown();
+    logger.info('Browser pool shutdown successfully');
+  } catch (error) {
+    logger.error('Error shutting down browser pool', error instanceof Error ? error : new Error(String(error)));
   }
 
   server.close(() => {
