@@ -74,24 +74,32 @@ export class BrowserManager {
       // Launch fresh browser instance
       this.logger.info('Launching fresh browser instance');
       const launchStart = Date.now();
+
+      // Build args list - exclude --single-process on Windows (causes STATUS_DLL_INIT_FAILED crashes)
+      const baseArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
+        '--window-size=1920,1080',
+        '--start-maximized',
+        '--disable-web-security',
+        '--allow-running-insecure-content',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+      ];
+
+      // Only add --single-process on Linux (Windows: causes 0xc0000142 crashes)
+      if (process.platform !== 'win32') {
+        baseArgs.push('--single-process');
+      }
+
       browser = await chromium.launch({
         headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-infobars',
-          '--window-size=1920,1080',
-          '--start-maximized',
-          '--disable-web-security',
-          '--allow-running-insecure-content',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process'
-        ],
+        args: baseArgs,
       });
       const launchDuration = Date.now() - launchStart;
       metricsCollector.recordBrowserLaunch(launchDuration);
