@@ -21,6 +21,11 @@ export interface ChunkingOptions {
   minChunkLength?: number;         // Minimum text length (default: 50)
 }
 
+interface TimedTranscriptSegment extends TranscriptSegment {
+  start: number;
+  duration: number;
+}
+
 export class TranscriptChunker {
   /**
    * Parse time string (MM:SS or HH:MM:SS) to seconds
@@ -87,7 +92,7 @@ export class TranscriptChunker {
     const chunks: TranscriptChunk[] = [];
 
     // Parse segment times and calculate approximate durations
-    const parsedSegments = segments.map((seg, idx) => {
+    const parsedSegments: TimedTranscriptSegment[] = segments.map((seg, idx) => {
       const start = this.parseTimeToSeconds(seg.time);
       const nextStart = idx < segments.length - 1
         ? this.parseTimeToSeconds(segments[idx + 1].time)

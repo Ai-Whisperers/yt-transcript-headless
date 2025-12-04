@@ -33,6 +33,17 @@ npm run mcp          # Run standalone MCP server
 npm run mcp:build    # Build and run MCP server
 ```
 
+## Developer CLI
+
+An interactive CLI (`npm run cli`) lets you drive the same backend flows without the React frontend:
+
+- **Modes:** single video, playlist, and batch extractions, plus health/metrics snapshots and supported formats lookup.
+- **I/O:** copy/paste URLs directly in the terminal, watch high-level progress summaries, and optionally persist JSON/SRT/TXT output.
+- **Configuration:** points to `http://localhost:3000/api` by default but respects `CLI_API_URL` (or `API_URL`) so you can target remote servers or Docker containers.
+- **Implementation:** lives in `src/cli/interactive-cli.ts`, reuses the canonical domain models, and attaches correlation IDs so requests still show up in telemetry.
+
+Use it during development when you want to test backend behavior quickly or when spinning up the dashboard would be overkill.
+
 ---
 
 ## Architecture

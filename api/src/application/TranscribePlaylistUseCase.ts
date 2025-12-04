@@ -5,25 +5,37 @@ import { PooledTranscriptExtractor } from '../infrastructure/PooledTranscriptExt
 import { ProgressEmitter } from '../infrastructure/ProgressStream';
 import { ILogger } from '../domain/ILogger';
 import { InvalidUrlError } from '../domain/errors';
+import { ICacheRepository } from '../domain/repositories/ICacheRepository';
+import { IJobRepository } from '../domain/repositories/IJobRepository';
+import { CachedTranscript } from '../domain/CachedTranscript';
+import { JobStatus } from '../domain/Job';
+import { randomUUID } from 'crypto';
 
 /**
  * TranscribePlaylistUseCase handles YouTube playlist transcript extraction.
  * Now uses parallel processing with browser pooling for improved performance.
+ * Supports optional caching via ICacheRepository for faster repeated extractions.
  */
 export class TranscribePlaylistUseCase {
   private playlistExtractor: PlaylistExtractor;
   private pooledExtractor: PooledTranscriptExtractor;
   private logger: ILogger;
   private defaultConcurrency: number;
+  private cacheRepository?: ICacheRepository;
+  private jobRepository?: IJobRepository;
 
   constructor(
     playlistExtractor: PlaylistExtractor,
     pooledExtractor: PooledTranscriptExtractor,
-    logger: ILogger
+    logger: ILogger,
+    cacheRepository?: ICacheRepository,
+    jobRepository?: IJobRepository
   ) {
     this.playlistExtractor = playlistExtractor;
     this.pooledExtractor = pooledExtractor;
     this.logger = logger;
+    this.cacheRepository = cacheRepository;
+    this.jobRepository = jobRepository;
     this.defaultConcurrency = parseInt(process.env.PLAYLIST_CONCURRENCY || '3', 10);
   }
 
@@ -85,22 +97,80 @@ export class TranscribePlaylistUseCase {
       // Convert video IDs to URLs
       const videoUrls = videoIdsToProcess.map(id => `https://www.youtube.com/watch?v=${id}`);
 
+      // Create job record if job tracking enabled
+      const jobId = randomUUID();
+      if (this.jobRepository) {
+        await this.createJobRecord(jobId, videoIdsToProcess.length, format, playlistInfo.playlistId, request.url);
+      }
+
+      // Check cache for existing transcripts
+      const cachedResults = await this.loadFromCache(videoIdsToProcess, videoUrls, format);
+
+      this.logger.info('Cache lookup completed', {
+        totalVideos: videoIdsToProcess.length,
+        cacheHits: cachedResults.size,
+        videosToExtract: videoIdsToProcess.length - cachedResults.size
+      });
+
+      // Filter out cached videos
+      const videosToExtract: string[] = [];
+      const videoIdsToExtract: string[] = [];
+      for (let i = 0; i < videoIdsToProcess.length; i++) {
+        const videoId = videoIdsToProcess[i];
+        if (!cachedResults.has(videoId)) {
+          videosToExtract.push(videoUrls[i]);
+          videoIdsToExtract.push(videoId);
+        }
+      }
+
       // Emit started event
       progressEmitter?.started();
 
-      // Process videos in parallel
-      const results = await this.processVideosInParallel(
-        videoUrls,
-        videoIdsToProcess,
-        format,
-        this.defaultConcurrency,
-        abortSignal,
-        progressEmitter
-      );
+      // Process only non-cached videos in parallel
+      let freshResults: VideoTranscriptResult[] = [];
+      if (videosToExtract.length > 0) {
+        freshResults = await this.processVideosInParallel(
+          videosToExtract,
+          videoIdsToExtract,
+          format,
+          this.defaultConcurrency,
+          abortSignal,
+          progressEmitter
+        );
 
-      const successCount = results.filter(r => r.success).length;
-      const failureCount = results.filter(r => !r.success).length;
+        // Save fresh results to cache
+        await this.saveToCache(freshResults, format);
+      }
+
+      // Merge cached and fresh results (maintain original order)
+      const allResults: VideoTranscriptResult[] = videoIdsToProcess.map(videoId => {
+        // Check cache first
+        if (cachedResults.has(videoId)) {
+          return cachedResults.get(videoId)!;
+        }
+
+        // Find in fresh results
+        const freshResult = freshResults.find(r => r.videoId === videoId);
+        return freshResult || {
+          videoId,
+          videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          success: false,
+          error: {
+            message: 'Result not found',
+            code: 'NOT_FOUND'
+          }
+        };
+      });
+
+      const successCount = allResults.filter(r => r.success).length;
+      const failureCount = allResults.filter(r => !r.success).length;
       const duration = Date.now() - startTime;
+
+      // Update job progress and complete
+      if (this.jobRepository) {
+        await this.updateJobProgress(jobId, allResults.length, successCount, failureCount);
+        await this.completeJobRecord(jobId);
+      }
 
       // Emit completed event
       progressEmitter?.completed(successCount, failureCount, duration);
@@ -108,11 +178,13 @@ export class TranscribePlaylistUseCase {
       this.logger.info('Playlist transcription completed', {
         playlistId: playlistInfo.playlistId,
         totalVideos: playlistInfo.videoIds.length,
-        processedVideos: results.length,
+        processedVideos: allResults.length,
+        cachedResults: cachedResults.size,
+        freshExtractions: freshResults.length,
         successfulExtractions: successCount,
         failedExtractions: failureCount,
         duration,
-        avgTimePerVideo: Math.round(duration / results.length)
+        avgTimePerVideo: allResults.length > 0 ? Math.round(duration / allResults.length) : 0
       });
 
       return {
@@ -122,10 +194,10 @@ export class TranscribePlaylistUseCase {
           playlistUrl: request.url,
           playlistTitle: playlistInfo.title,
           totalVideos: playlistInfo.videoIds.length,
-          processedVideos: results.length,
+          processedVideos: allResults.length,
           successfulExtractions: successCount,
           failedExtractions: failureCount,
-          results,
+          results: allResults,
           format,
           extractedAt: new Date().toISOString()
         }
@@ -356,4 +428,195 @@ export class TranscribePlaylistUseCase {
     }
     return '00:03';
   }
+
+  /**
+   * Load cached transcripts from cache repository
+   */
+  private loadFromCache = async (
+    videoIds: string[],
+    videoUrls: string[],
+    format: TranscriptFormat
+  ): Promise<Map<string, VideoTranscriptResult>> => {
+    const results = new Map<string, VideoTranscriptResult>();
+
+    if (!this.cacheRepository) {
+      return results;
+    }
+
+    try {
+      const cached = await this.cacheRepository.getTranscripts(videoIds);
+
+      for (const [videoId, cachedTranscript] of cached.entries()) {
+        const result: VideoTranscriptResult = {
+          videoId,
+          videoUrl: cachedTranscript.videoUrl,
+          videoTitle: cachedTranscript.videoTitle,
+          success: true,
+          transcript: cachedTranscript.transcript,
+          extractedAt: cachedTranscript.extractedAt
+        };
+
+        // Add formatted outputs based on format
+        if (format === TranscriptFormat.SRT && cachedTranscript.srt) {
+          result.srt = cachedTranscript.srt;
+        } else if (format === TranscriptFormat.TEXT && cachedTranscript.text) {
+          result.text = cachedTranscript.text;
+        }
+
+        results.set(videoId, result);
+
+        // Update access time
+        await this.cacheRepository.updateAccessTime(videoId);
+      }
+
+      this.logger.info('Loaded transcripts from cache', {
+        requested: videoIds.length,
+        cacheHits: results.size
+      });
+    } catch (error: any) {
+      this.logger.warn('Failed to load from cache', {
+        error: error.message,
+        videoCount: videoIds.length
+      });
+    }
+
+    return results;
+  };
+
+  /**
+   * Save fresh results to cache repository
+   */
+  private saveToCache = async (
+    results: VideoTranscriptResult[],
+    format: TranscriptFormat
+  ): Promise<void> => {
+    if (!this.cacheRepository) {
+      return;
+    }
+
+    try {
+      const successfulResults = results.filter(r => r.success && r.transcript);
+      if (successfulResults.length === 0) {
+        return;
+      }
+
+      const cachedTranscripts: CachedTranscript[] = successfulResults.map(result => ({
+        videoId: result.videoId,
+        videoUrl: result.videoUrl,
+        videoTitle: result.videoTitle,
+        transcript: result.transcript!,
+        srt: result.srt,
+        text: result.text,
+        extractedAt: result.extractedAt || new Date().toISOString(),
+        lastAccessedAt: new Date().toISOString(),
+        accessCount: 1
+      }));
+
+      await this.cacheRepository.saveTranscripts(cachedTranscripts);
+
+      this.logger.info('Saved results to cache', {
+        count: cachedTranscripts.length
+      });
+    } catch (error: any) {
+      this.logger.warn('Failed to save to cache', {
+        error: error.message,
+        resultCount: results.length
+      });
+    }
+  };
+
+  /**
+   * Create job record
+   */
+  private createJobRecord = async (
+    jobId: string,
+    totalItems: number,
+    format: TranscriptFormat,
+    playlistId: string,
+    playlistUrl: string
+  ): Promise<void> => {
+    if (!this.jobRepository) {
+      return;
+    }
+
+    try {
+      await this.jobRepository.createJob({
+        id: jobId,
+        type: 'playlist',
+        status: JobStatus.PENDING,
+        totalItems,
+        processedItems: 0,
+        successfulItems: 0,
+        failedItems: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        metadata: {
+          format,
+          playlistId,
+          playlistUrl
+        }
+      });
+
+      this.logger.debug('Job record created', { jobId, totalItems });
+    } catch (error: any) {
+      this.logger.warn('Failed to create job record', {
+        error: error.message,
+        jobId
+      });
+    }
+  };
+
+  /**
+   * Update job progress
+   */
+  private updateJobProgress = async (
+    jobId: string,
+    processedItems: number,
+    successfulItems: number,
+    failedItems: number
+  ): Promise<void> => {
+    if (!this.jobRepository) {
+      return;
+    }
+
+    try {
+      await this.jobRepository.updateJobProgress(
+        jobId,
+        processedItems,
+        successfulItems,
+        failedItems
+      );
+
+      this.logger.debug('Job progress updated', {
+        jobId,
+        processedItems,
+        successfulItems,
+        failedItems
+      });
+    } catch (error: any) {
+      this.logger.warn('Failed to update job progress', {
+        error: error.message,
+        jobId
+      });
+    }
+  };
+
+  /**
+   * Complete job record
+   */
+  private completeJobRecord = async (jobId: string): Promise<void> => {
+    if (!this.jobRepository) {
+      return;
+    }
+
+    try {
+      await this.jobRepository.completeJob(jobId);
+      this.logger.debug('Job completed', { jobId });
+    } catch (error: any) {
+      this.logger.warn('Failed to complete job', {
+        error: error.message,
+        jobId
+      });
+    }
+  };
 }
