@@ -141,7 +141,9 @@ export function createRouter(): RouterContext {
   const transcribePlaylistUseCase = new TranscribePlaylistUseCase(
     playlistExtractor,
     pooledExtractor,
-    playlistLogger
+    playlistLogger,
+    cacheRepository,
+    jobRepository
   );
 
   // Initialize progress stream for SSE
