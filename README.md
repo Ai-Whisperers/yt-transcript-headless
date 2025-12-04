@@ -32,6 +32,11 @@ This project provides a robust solution for extracting YouTube video transcripts
 
 ### Recent Updates
 
+**v0.7.0-beta (2025-12-04) - CLI & Persistent Playlists**
+- **Terminal workflow:** Shipping an interactive CLI (`npm run cli`) so devs can run single, playlist, or batch jobs plus health checks without the React dashboard. Supports custom `CLI_API_URL` targets and optional file export for JSON/SRT/TXT artifacts.
+- **Playlist persistence:** Playlist extractions now plug into the SQLite cache + job repository stack, unlocking cache hits, resumable progress tracking, and better observability around playlist workloads.
+- **RAG adapters:** Added OpenAI + ChromaDB provider adapters and tightened the semantic-search/chat use cases so the Retrieval-Augmented Generation stack stays vendor-agnostic and swappable.
+
 **v0.6.0-beta (2025-12-03) - RAG & Persistence Layer:**
 - **RAG (Retrieval-Augmented Generation):** Vendor-agnostic semantic search and AI chat
   - Local embeddings via Xenova/transformers (384-dim, no API costs)

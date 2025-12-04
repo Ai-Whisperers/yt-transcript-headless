@@ -9,6 +9,11 @@ This directory contains all project documentation organized by topic. Start here
 
 ## Quick Navigation
 
+### 🔄 Latest Updates
+- **Interactive CLI:** `api/README.md#developer-cli` and the root [Terminal-Friendly CLI](../README.md#terminal-friendly-cli) describe the new `npm run cli` workflow for issuing requests without the React dashboard.
+- **Playlist persistence:** Playlist extractions now reuse the SQLite cache + job repository described in [PERSISTENCE-IMPLEMENTATION-PLAN.md](../PERSISTENCE-IMPLEMENTATION-PLAN.md) and [TESTING-PERSISTENCE.md](../TESTING-PERSISTENCE.md), enabling cache hits and observable job tracking for every playlist run.
+- **RAG provider adapters:** The Retrieval-Augmented stack gained OpenAI + ChromaDB connectors plus the semantic search/chat use cases detailed in [RAG-IMPLEMENTATION.md](../RAG-IMPLEMENTATION.md) and [RAG-ARCHITECTURE-PLAN.md](../RAG-ARCHITECTURE-PLAN.md), keeping the system vendor-agnostic.
+
 ### 🚀 Getting Started
 - [Main README](../README.md) - Project overview and quick start
 - [Project Structure](STRUCTURE.md) - Understanding the codebase organization
