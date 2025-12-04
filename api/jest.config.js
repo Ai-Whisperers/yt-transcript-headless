@@ -10,6 +10,10 @@ module.exports = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   moduleDirectories: ['node_modules', '<rootDir>/node_modules'],
   modulePaths: ['<rootDir>/src', '<rootDir>'],
+  // Mock ESM modules that Jest can't handle
+  moduleNameMapper: {
+    '^@xenova/transformers$': '<rootDir>/tests/__mocks__/@xenova/transformers.ts'
+  },
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
