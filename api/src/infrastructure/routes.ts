@@ -349,6 +349,266 @@ export function createRouter(): RouterContext {
     });
   }));
 
+  // ============================================================================
+  // Cache Management Endpoints
+  // ============================================================================
+
+  // Get cache statistics
+  router.get('/cache/stats', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('cache-stats');
+
+    if (!cacheRepository) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          message: 'Persistence layer not enabled',
+          code: 'PERSISTENCE_DISABLED',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+    }
+
+    try {
+      const stats = await cacheRepository.getCacheStats();
+
+      logger.info('Cache stats requested', {
+        totalEntries: stats.totalEntries,
+        correlationId: req.correlationId
+      });
+
+      res.json({
+        success: true,
+        data: {
+          ...stats,
+          correlationId: req.correlationId
+        }
+      });
+    } catch (error: any) {
+      logger.error('Failed to get cache stats', error, { correlationId: req.correlationId });
+      throw error;
+    }
+  }));
+
+  // Get specific cached transcript
+  router.get('/cache/:videoId', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('cache-get');
+    const { videoId } = req.params;
+
+    if (!cacheRepository) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          message: 'Persistence layer not enabled',
+          code: 'PERSISTENCE_DISABLED',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+    }
+
+    try {
+      const cached = await cacheRepository.getTranscript(videoId);
+
+      if (!cached) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            message: `Transcript not found in cache for video: ${videoId}`,
+            code: 'NOT_FOUND',
+            timestamp: new Date().toISOString(),
+            correlationId: req.correlationId
+          }
+        });
+      }
+
+      logger.info('Cached transcript retrieved', {
+        videoId,
+        accessCount: cached.accessCount,
+        correlationId: req.correlationId
+      });
+
+      res.json({
+        success: true,
+        data: {
+          ...cached,
+          correlationId: req.correlationId
+        }
+      });
+    } catch (error: any) {
+      logger.error('Failed to get cached transcript', error, {
+        videoId,
+        correlationId: req.correlationId
+      });
+      throw error;
+    }
+  }));
+
+  // Delete specific cached transcript
+  router.delete('/cache/:videoId', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('cache-delete');
+    const { videoId } = req.params;
+
+    if (!cacheRepository) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          message: 'Persistence layer not enabled',
+          code: 'PERSISTENCE_DISABLED',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+    }
+
+    try {
+      // Check if transcript exists
+      const exists = await cacheRepository.hasTranscript(videoId);
+
+      if (!exists) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            message: `Transcript not found in cache for video: ${videoId}`,
+            code: 'NOT_FOUND',
+            timestamp: new Date().toISOString(),
+            correlationId: req.correlationId
+          }
+        });
+      }
+
+      await cacheRepository.deleteTranscript(videoId);
+
+      logger.info('Cached transcript deleted', {
+        videoId,
+        correlationId: req.correlationId
+      });
+
+      res.json({
+        success: true,
+        data: {
+          message: `Transcript deleted from cache for video: ${videoId}`,
+          videoId,
+          correlationId: req.correlationId
+        }
+      });
+    } catch (error: any) {
+      logger.error('Failed to delete cached transcript', error, {
+        videoId,
+        correlationId: req.correlationId
+      });
+      throw error;
+    }
+  }));
+
+  // Evict oldest cached entries (LRU eviction)
+  router.post('/cache/evict', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('cache-evict');
+    const { count } = req.body;
+
+    if (!cacheRepository) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          message: 'Persistence layer not enabled',
+          code: 'PERSISTENCE_DISABLED',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+    }
+
+    if (!count || typeof count !== 'number' || count <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: 'Invalid count parameter. Must be a positive number.',
+          code: 'INVALID_PARAMETER',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+    }
+
+    try {
+      const evictedCount = await cacheRepository.evictOldest(count);
+
+      logger.info('Cache eviction completed', {
+        requested: count,
+        evicted: evictedCount,
+        correlationId: req.correlationId
+      });
+
+      res.json({
+        success: true,
+        data: {
+          message: `Evicted ${evictedCount} oldest entries from cache`,
+          requested: count,
+          evicted: evictedCount,
+          correlationId: req.correlationId
+        }
+      });
+    } catch (error: any) {
+      logger.error('Failed to evict cached entries', error, {
+        count,
+        correlationId: req.correlationId
+      });
+      throw error;
+    }
+  }));
+
+  // Clear entire cache (DANGEROUS - requires confirmation header)
+  router.delete('/cache', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('cache-clear');
+    const confirmHeader = req.headers['x-confirm-clear-cache'];
+
+    if (!cacheRepository) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          message: 'Persistence layer not enabled',
+          code: 'PERSISTENCE_DISABLED',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+    }
+
+    if (confirmHeader !== 'yes-clear-all-cache') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: 'Cache clear requires confirmation header: X-Confirm-Clear-Cache: yes-clear-all-cache',
+          code: 'CONFIRMATION_REQUIRED',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+    }
+
+    try {
+      const statsBefore = await cacheRepository.getCacheStats();
+      await cacheRepository.clearCache();
+
+      logger.warn('Entire cache cleared', {
+        entriesDeleted: statsBefore.totalEntries,
+        correlationId: req.correlationId
+      });
+
+      res.json({
+        success: true,
+        data: {
+          message: 'Entire cache cleared successfully',
+          entriesDeleted: statsBefore.totalEntries,
+          correlationId: req.correlationId
+        }
+      });
+    } catch (error: any) {
+      logger.error('Failed to clear cache', error, { correlationId: req.correlationId });
+      throw error;
+    }
+  }));
+
   // Playlist transcribe endpoint
   router.post('/transcribe/playlist', asyncHandler(async (req: Request, res: Response) => {
     const logger = req.logger || new Logger('transcribe-playlist');
