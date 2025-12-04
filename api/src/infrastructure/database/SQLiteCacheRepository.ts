@@ -25,8 +25,19 @@ export class SQLiteCacheRepository implements ICacheRepository {
         return null;
       }
 
-      // Update access time and count
-      await this.updateAccessTime(videoId);
+      // Update access time and count in database
+      const now = new Date().toISOString();
+      const updateStmt = this.db.prepare(`
+        UPDATE transcripts
+        SET last_accessed_at = ?,
+            access_count = access_count + 1
+        WHERE video_id = ?
+      `);
+      updateStmt.run(now, videoId);
+
+      // Update row data to reflect changes
+      row.last_accessed_at = now;
+      row.access_count = (row.access_count || 0) + 1;
 
       return this.mapRowToTranscript(row);
     } catch (error: any) {

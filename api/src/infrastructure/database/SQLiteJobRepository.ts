@@ -325,22 +325,22 @@ export class SQLiteJobRepository implements IJobRepository {
       const stmt = this.db.prepare(`
         SELECT
           COUNT(*) as total_jobs,
-          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_jobs,
-          SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing_jobs,
-          SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_jobs,
-          SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs,
-          SUM(CASE WHEN status = 'aborted' THEN 1 ELSE 0 END) as aborted_jobs
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending_jobs,
+          COALESCE(SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END), 0) as processing_jobs,
+          COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed_jobs,
+          COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed_jobs,
+          COALESCE(SUM(CASE WHEN status = 'aborted' THEN 1 ELSE 0 END), 0) as aborted_jobs
         FROM jobs
       `);
       const row: any = stmt.get();
 
       return {
-        totalJobs: row.total_jobs,
-        pendingJobs: row.pending_jobs,
-        processingJobs: row.processing_jobs,
-        completedJobs: row.completed_jobs,
-        failedJobs: row.failed_jobs,
-        abortedJobs: row.aborted_jobs
+        totalJobs: row.total_jobs || 0,
+        pendingJobs: row.pending_jobs || 0,
+        processingJobs: row.processing_jobs || 0,
+        completedJobs: row.completed_jobs || 0,
+        failedJobs: row.failed_jobs || 0,
+        abortedJobs: row.aborted_jobs || 0
       };
     } catch (error: any) {
       this.logger.error('Failed to get job summary', error);
