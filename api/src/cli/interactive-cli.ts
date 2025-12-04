@@ -36,7 +36,7 @@ async function main() {
   while (!exitRequested) {
     console.log('\nSelect an action:');
     console.log('  [1] Extract single video transcript');
-    console.log('  [2] Extract playlist transcripts');
+    console.log('  [2] Extract playlist/channel transcripts');
     console.log('  [3] Extract batch transcripts (URLs list)');
     console.log('  [4] Check API health & metrics');
     console.log('  [5] List supported formats');
@@ -96,9 +96,15 @@ async function handleSingleVideo() {
 }
 
 async function handlePlaylist() {
-  console.log('\nPlaylist extraction');
+  console.log('\nPlaylist/Channel extraction');
+  console.log('Supported formats:');
+  console.log('  - Playlist: https://youtube.com/playlist?list=...');
+  console.log('  - Channel: https://youtube.com/@username');
+  console.log('  - Channel: https://youtube.com/channel/UCxxx');
+  console.log('  - Channel: https://youtube.com/c/ChannelName');
+  console.log('');
 
-  const url = await promptRequired('Playlist URL: ');
+  const url = await promptRequired('Playlist or Channel URL: ');
   const formatInput = (await rl.question('Format (json|srt|text) [json]: ')).trim().toLowerCase();
   const format = parseFormat(formatInput);
   const maxVideosInput = (await rl.question('Max videos to process [press Enter for default]: ')).trim();
