@@ -32,6 +32,21 @@ This project provides a robust solution for extracting YouTube video transcripts
 
 ### Recent Updates
 
+**v0.6.0-beta (2025-12-03) - RAG & Persistence Layer:**
+- **RAG (Retrieval-Augmented Generation):** Vendor-agnostic semantic search and AI chat
+  - Local embeddings via Xenova/transformers (384-dim, no API costs)
+  - llama.cpp LLM integration (local, privacy-preserving)
+  - Qdrant vector store (high-performance similarity search)
+  - Easy provider swapping via environment variables
+- **Persistence Layer:** SQLite-based caching and job tracking
+  - Automatic transcript caching with LRU eviction
+  - Job tracking with status management
+  - Cache hit optimization (~99% faster for cached transcripts)
+  - Cache management API endpoints
+- **Semantic Search:** Find relevant transcript segments by meaning
+- **RAG Chat:** Conversational AI with transcript context
+- See [RAG-IMPLEMENTATION.md](RAG-IMPLEMENTATION.md) for setup guide
+
 **v0.5.0-beta (2025-12-03) - Parallel Processing & Real-time Progress:**
 - **Parallel Processing:** Both batch and playlist now process videos concurrently (3x-5x faster)
 - **SSE Progress Streaming:** Real-time progress updates via Server-Sent Events
@@ -88,6 +103,8 @@ This project provides a robust solution for extracting YouTube video transcripts
 
 ### Key Features
 
+- **RAG & Semantic Search:** AI-powered transcript search and conversational chat with vendor-agnostic architecture
+- **Persistence Layer:** SQLite caching with 99% performance gain for cached transcripts
 - **Parallel Processing:** Concurrent video extraction with configurable worker count (3-5x faster)
 - **Real-time Progress:** Server-Sent Events (SSE) for live extraction progress updates
 - **Headless Operation:** Runs without UI rendering for optimal performance
@@ -167,6 +184,13 @@ PROJECT/
     └── scripts/            # Start/stop/test scripts
 ```
 
+### Backend ↔ Frontend Integration
+
+- **Local development:** Run the API on port `3000` (`npm run dev` inside `api/`) and the React dashboard on port `5173` (`npm run dev` inside `web/`). The UI reads `VITE_API_URL` (defaults to `http://localhost:3000/api`) and sends every request through the typed Axios client in `web/src/services/api.ts`, so both batch and playlist flows share the same contract as `api/src/infrastructure/routes.ts`.
+- **Shared observability:** Every HTTP call includes a correlation ID header and is throttled by the Express middleware stack defined in `api/src/server.ts`, so rate limits, request queueing, and SSE progress streaming automatically apply to UI interactions.
+- **Production bundling:** `Dockerfile` builds the Vite assets first, copies them into `/app/public`, and the Express server serves them via the SPA fallback. As a result, `docker-compose up` ships a single container where `/api/**` is handled by the backend router and everything else is served statically.
+- **Streaming endpoints:** For playlists or large batches the API returns a job ID plus `/api/transcribe/*/progress/:jobId` SSE endpoints. The frontend connects via `EventSource` while the backend pushes incremental progress through `ProgressStream`, so real-time updates work identically in both dev and containerized deployments.
+
 ## Quick Start
 
 ### Prerequisites
@@ -209,6 +233,20 @@ cd web
 npm run dev
 # Dashboard runs on http://localhost:5173
 ```
+
+### Terminal-Friendly CLI
+
+Prefer to stay in the terminal? A lightweight interactive client ships with the API package:
+
+```bash
+cd api
+npm run cli               # prompts for mode, URLs, format, etc.
+CLI_API_URL=http://hosted-api.example.com/api npm run cli
+```
+
+- Menu-driven wrapper around the REST API (single video, playlist, and batch modes plus health checks).
+- Automatically decorates requests with correlation IDs and lets you persist transcripts/SRTs/JSON summaries to disk.
+- Defaults to `http://localhost:3000/api` but honors `CLI_API_URL` or `API_URL` so you can point it at remote deployments or Docker containers.
 
 ### Docker Deployment
 

@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express';
 import { TranscribeVideoUseCase } from '../application/TranscribeVideoUseCase';
 import { TranscribePlaylistUseCase } from '../application/TranscribePlaylistUseCase';
 import { BatchTranscribeUseCase } from '../application/BatchTranscribeUseCase';
+import { SemanticSearchUseCase } from '../application/SemanticSearchUseCase';
+import { RAGChatUseCase } from '../application/RAGChatUseCase';
+import { AutoEmbedTranscriptUseCase } from '../application/AutoEmbedTranscriptUseCase';
 import { TranscriptExtractor } from './TranscriptExtractor';
 import { PlaylistExtractor } from './PlaylistExtractor';
 import { PooledTranscriptExtractor } from './PooledTranscriptExtractor';
@@ -9,6 +12,7 @@ import { BrowserManager } from './BrowserManager';
 import { BrowserPool, getSharedBrowserPool, shutdownSharedPool } from './BrowserPool';
 import { ProgressStream, ProgressEmitter, getSharedProgressStream } from './ProgressStream';
 import { RepositoryFactory } from './database/RepositoryFactory';
+import { RAGServiceFactory } from './RAGServiceFactory';
 import { Logger } from './Logger';
 import { TranscriptRequest, TranscriptFormat } from '../domain/TranscriptSegment';
 import { PlaylistRequest } from '../domain/PlaylistTypes';
@@ -72,6 +76,56 @@ export function createRouter(): RouterContext {
     }
   } else {
     logger.info('Persistence disabled - set ENABLE_PERSISTENCE=true to enable caching');
+  }
+
+  // Initialize RAG service factory (optional, based on environment variable)
+  const ragLogger = new Logger('rag-services');
+  const ragServiceFactory = RAGServiceFactory.getInstance(ragLogger);
+  let semanticSearchUseCase: SemanticSearchUseCase | undefined;
+  let ragChatUseCase: RAGChatUseCase | undefined;
+  let autoEmbedUseCase: AutoEmbedTranscriptUseCase | undefined;
+
+  if (ragServiceFactory.isRAGEnabled()) {
+    try {
+      const embeddingService = ragServiceFactory.getEmbeddingService();
+      const llmService = ragServiceFactory.getLLMService();
+      const vectorStore = ragServiceFactory.getVectorStore();
+
+      semanticSearchUseCase = new SemanticSearchUseCase(
+        embeddingService,
+        vectorStore,
+        ragLogger
+      );
+
+      ragChatUseCase = new RAGChatUseCase(
+        embeddingService,
+        llmService,
+        vectorStore,
+        ragLogger
+      );
+
+      autoEmbedUseCase = new AutoEmbedTranscriptUseCase(
+        embeddingService,
+        vectorStore,
+        ragLogger
+      );
+
+      // Initialize vector store asynchronously (non-blocking)
+      ragServiceFactory.initializeAll().catch(error => {
+        logger.error('RAG services async initialization failed', error);
+      });
+
+      logger.info('RAG services initialized', {
+        semanticSearchEnabled: !!semanticSearchUseCase,
+        ragChatEnabled: !!ragChatUseCase,
+        autoEmbedEnabled: !!autoEmbedUseCase
+      });
+    } catch (error: any) {
+      logger.error('Failed to initialize RAG services', error);
+      logger.warn('Continuing without RAG - semantic search and chat disabled');
+    }
+  } else {
+    logger.info('RAG services disabled - set ENABLE_RAG=true to enable semantic search and chat');
   }
 
   // Initialize use cases with optional repositories
@@ -607,6 +661,210 @@ export function createRouter(): RouterContext {
       logger.error('Failed to clear cache', error, { correlationId: req.correlationId });
       throw error;
     }
+  }));
+
+  // RAG: Health check endpoint
+  router.get('/rag/health', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('rag-health');
+
+    try {
+      const healthStatus = await ragServiceFactory.getHealthStatus();
+
+      res.json({
+        success: true,
+        data: healthStatus,
+        correlationId: req.correlationId
+      });
+    } catch (error: any) {
+      logger.error('RAG health check failed', error);
+      throw error;
+    }
+  }));
+
+  // RAG: Semantic search endpoint
+  router.post('/rag/search', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('rag-search');
+
+    if (!semanticSearchUseCase) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          message: 'RAG services not enabled. Set ENABLE_RAG=true and configure embedding/vector store services.',
+          code: 'RAG_DISABLED',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+    }
+
+    const searchRequest = {
+      query: req.body.query,
+      limit: req.body.limit,
+      minScore: req.body.minScore,
+      videoId: req.body.videoId,
+      videoIds: req.body.videoIds,
+      timeRange: req.body.timeRange
+    };
+
+    logger.info('Processing semantic search request', {
+      query: searchRequest.query,
+      limit: searchRequest.limit,
+      correlationId: req.correlationId
+    });
+
+    const result = await semanticSearchUseCase.execute(searchRequest);
+
+    if (!result.success) {
+      return res.status(400).json({
+        ...result,
+        correlationId: req.correlationId
+      });
+    }
+
+    res.json({
+      ...result,
+      correlationId: req.correlationId
+    });
+  }));
+
+  // RAG: Chat endpoint
+  router.post('/rag/chat', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('rag-chat');
+
+    if (!ragChatUseCase) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          message: 'RAG services not enabled. Set ENABLE_RAG=true and configure all RAG services (embedding, LLM, vector store).',
+          code: 'RAG_DISABLED',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+    }
+
+    const chatRequest = {
+      query: req.body.query,
+      videoId: req.body.videoId,
+      videoIds: req.body.videoIds,
+      maxContextChunks: req.body.maxContextChunks,
+      temperature: req.body.temperature,
+      maxTokens: req.body.maxTokens,
+      conversationHistory: req.body.conversationHistory
+    };
+
+    logger.info('Processing RAG chat request', {
+      query: chatRequest.query,
+      maxContextChunks: chatRequest.maxContextChunks,
+      correlationId: req.correlationId
+    });
+
+    const result = await ragChatUseCase.execute(chatRequest);
+
+    if (!result.success) {
+      return res.status(400).json({
+        ...result,
+        correlationId: req.correlationId
+      });
+    }
+
+    res.json({
+      ...result,
+      correlationId: req.correlationId
+    });
+  }));
+
+  // RAG: Chat streaming endpoint (SSE)
+  router.post('/rag/chat/stream', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('rag-chat-stream');
+
+    if (!ragChatUseCase) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          message: 'RAG services not enabled',
+          code: 'RAG_DISABLED'
+        }
+      });
+    }
+
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const chatRequest = {
+      query: req.body.query,
+      videoId: req.body.videoId,
+      videoIds: req.body.videoIds,
+      maxContextChunks: req.body.maxContextChunks,
+      temperature: req.body.temperature,
+      maxTokens: req.body.maxTokens,
+      conversationHistory: req.body.conversationHistory
+    };
+
+    logger.info('Processing RAG chat stream request', {
+      query: chatRequest.query,
+      correlationId: req.correlationId
+    });
+
+    try {
+      for await (const chunk of ragChatUseCase.stream(chatRequest)) {
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      }
+
+      res.end();
+    } catch (error: any) {
+      logger.error('RAG chat stream failed', error);
+      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+      res.end();
+    }
+  }));
+
+  // RAG: Manual embedding endpoint (chunk + embed existing transcript)
+  router.post('/rag/embed', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('rag-embed');
+
+    if (!autoEmbedUseCase) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          message: 'RAG services not enabled',
+          code: 'RAG_DISABLED'
+        }
+      });
+    }
+
+    const embedRequest = {
+      videoId: req.body.videoId,
+      videoUrl: req.body.videoUrl,
+      videoTitle: req.body.videoTitle,
+      segments: req.body.segments,
+      chunkingOptions: req.body.chunkingOptions
+    };
+
+    if (!embedRequest.videoId || !embedRequest.videoUrl || !embedRequest.segments) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: 'Missing required fields: videoId, videoUrl, segments',
+          code: 'INVALID_REQUEST'
+        }
+      });
+    }
+
+    logger.info('Processing manual embedding request', {
+      videoId: embedRequest.videoId,
+      segmentCount: embedRequest.segments.length,
+      correlationId: req.correlationId
+    });
+
+    const result = await autoEmbedUseCase.execute(embedRequest);
+
+    res.json({
+      ...result,
+      correlationId: req.correlationId
+    });
   }));
 
   // Playlist transcribe endpoint
