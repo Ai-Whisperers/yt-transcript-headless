@@ -1,6 +1,7 @@
 import { PlaylistRequest, PlaylistResponse, VideoTranscriptResult } from '../domain/PlaylistTypes';
 import { TranscriptFormat, TranscriptSegment } from '../domain/TranscriptSegment';
 import { PlaylistExtractor } from '../infrastructure/PlaylistExtractor';
+import { ChannelExtractor } from '../infrastructure/ChannelExtractor';
 import { PooledTranscriptExtractor } from '../infrastructure/PooledTranscriptExtractor';
 import { ProgressEmitter } from '../infrastructure/ProgressStream';
 import { ILogger } from '../domain/ILogger';
@@ -12,12 +13,14 @@ import { JobStatus } from '../domain/Job';
 import { randomUUID } from 'crypto';
 
 /**
- * TranscribePlaylistUseCase handles YouTube playlist transcript extraction.
- * Now uses parallel processing with browser pooling for improved performance.
+ * TranscribePlaylistUseCase handles YouTube playlist AND channel transcript extraction.
+ * Now supports both playlist URLs and channel URLs with automatic detection.
+ * Uses parallel processing with browser pooling for improved performance.
  * Supports optional caching via ICacheRepository for faster repeated extractions.
  */
 export class TranscribePlaylistUseCase {
   private playlistExtractor: PlaylistExtractor;
+  private channelExtractor: ChannelExtractor;
   private pooledExtractor: PooledTranscriptExtractor;
   private logger: ILogger;
   private defaultConcurrency: number;
@@ -26,12 +29,14 @@ export class TranscribePlaylistUseCase {
 
   constructor(
     playlistExtractor: PlaylistExtractor,
+    channelExtractor: ChannelExtractor,
     pooledExtractor: PooledTranscriptExtractor,
     logger: ILogger,
     cacheRepository?: ICacheRepository,
     jobRepository?: IJobRepository
   ) {
     this.playlistExtractor = playlistExtractor;
+    this.channelExtractor = channelExtractor;
     this.pooledExtractor = pooledExtractor;
     this.logger = logger;
     this.cacheRepository = cacheRepository;
@@ -46,49 +51,92 @@ export class TranscribePlaylistUseCase {
   ): Promise<PlaylistResponse> {
     const startTime = Date.now();
 
-    // Validate playlist URL
-    if (!PlaylistExtractor.isPlaylistUrl(request.url)) {
-      throw new InvalidUrlError(request.url + ' - URL must be a valid YouTube playlist URL with list parameter');
+    // Detect URL type: channel or playlist
+    const isChannel = ChannelExtractor.isChannelUrl(request.url);
+    const isPlaylist = PlaylistExtractor.isPlaylistUrl(request.url);
+
+    // Validate that URL is either channel or playlist
+    if (!isChannel && !isPlaylist) {
+      throw new InvalidUrlError(
+        request.url + ' - URL must be a valid YouTube channel URL (@username, /channel/UC..., /c/...) or playlist URL (with list parameter)'
+      );
     }
 
     const format = request.format || TranscriptFormat.JSON;
     const maxVideos = request.maxVideos || 100;
+    const urlType = isChannel ? 'channel' : 'playlist';
 
-    this.logger.info('Starting parallel playlist transcription', {
-      playlistUrl: request.url,
+    this.logger.info(`Starting parallel ${urlType} transcription`, {
+      url: request.url,
+      urlType,
       format,
       maxVideos,
       concurrency: this.defaultConcurrency
     });
 
     try {
-      // Extract video IDs from playlist
-      const playlistInfo = await this.playlistExtractor.extractVideoIds(request.url, abortSignal);
+      // Extract video IDs from channel or playlist
+      let videoIds: string[];
+      let sourceId: string;
+      let sourceTitle: string | undefined;
 
-      if (playlistInfo.videoIds.length === 0) {
-        progressEmitter?.failed('No videos found in playlist');
-        return {
-          success: false,
-          error: {
-            message: 'No videos found in playlist',
-            code: 'EMPTY_PLAYLIST',
-            timestamp: new Date().toISOString(),
-            context: { playlistId: playlistInfo.playlistId }
-          }
-        };
+      if (isChannel) {
+        const channelInfo = await this.channelExtractor.extractVideoIds(request.url, abortSignal);
+
+        if (channelInfo.videoIds.length === 0) {
+          progressEmitter?.failed('No videos found in channel');
+          return {
+            success: false,
+            error: {
+              message: 'No videos found in channel',
+              code: 'EMPTY_CHANNEL',
+              timestamp: new Date().toISOString(),
+              context: { channelId: channelInfo.channelId }
+            }
+          };
+        }
+
+        videoIds = channelInfo.videoIds;
+        sourceId = channelInfo.channelHandle || channelInfo.channelId;
+        sourceTitle = channelInfo.title;
+
+        this.logger.info('Extracted video IDs from channel', {
+          channelId: channelInfo.channelId,
+          channelHandle: channelInfo.channelHandle,
+          videoCount: channelInfo.videoCount
+        });
+      } else {
+        const playlistInfo = await this.playlistExtractor.extractVideoIds(request.url, abortSignal);
+
+        if (playlistInfo.videoIds.length === 0) {
+          progressEmitter?.failed('No videos found in playlist');
+          return {
+            success: false,
+            error: {
+              message: 'No videos found in playlist',
+              code: 'EMPTY_PLAYLIST',
+              timestamp: new Date().toISOString(),
+              context: { playlistId: playlistInfo.playlistId }
+            }
+          };
+        }
+
+        videoIds = playlistInfo.videoIds;
+        sourceId = playlistInfo.playlistId;
+        sourceTitle = playlistInfo.title;
+
+        this.logger.info('Extracted video IDs from playlist', {
+          playlistId: playlistInfo.playlistId,
+          videoCount: playlistInfo.videoIds.length
+        });
       }
 
-      this.logger.info('Extracted video IDs from playlist', {
-        playlistId: playlistInfo.playlistId,
-        videoCount: playlistInfo.videoIds.length
-      });
-
       // Limit number of videos if needed
-      const videoIdsToProcess = playlistInfo.videoIds.slice(0, maxVideos);
+      const videoIdsToProcess = videoIds.slice(0, maxVideos);
 
-      if (videoIdsToProcess.length < playlistInfo.videoIds.length) {
-        this.logger.info('Limiting playlist processing', {
-          totalVideos: playlistInfo.videoIds.length,
+      if (videoIdsToProcess.length < videoIds.length) {
+        this.logger.info(`Limiting ${urlType} processing`, {
+          totalVideos: videoIds.length,
           maxVideos,
           processing: videoIdsToProcess.length
         });
@@ -100,7 +148,7 @@ export class TranscribePlaylistUseCase {
       // Create job record if job tracking enabled
       const jobId = randomUUID();
       if (this.jobRepository) {
-        await this.createJobRecord(jobId, videoIdsToProcess.length, format, playlistInfo.playlistId, request.url);
+        await this.createJobRecord(jobId, videoIdsToProcess.length, format, sourceId, request.url);
       }
 
       // Check cache for existing transcripts
@@ -175,9 +223,10 @@ export class TranscribePlaylistUseCase {
       // Emit completed event
       progressEmitter?.completed(successCount, failureCount, duration);
 
-      this.logger.info('Playlist transcription completed', {
-        playlistId: playlistInfo.playlistId,
-        totalVideos: playlistInfo.videoIds.length,
+      this.logger.info(`${urlType} transcription completed`, {
+        sourceId,
+        sourceType: urlType,
+        totalVideos: videoIds.length,
         processedVideos: allResults.length,
         cachedResults: cachedResults.size,
         freshExtractions: freshResults.length,
@@ -190,10 +239,10 @@ export class TranscribePlaylistUseCase {
       return {
         success: true,
         data: {
-          playlistId: playlistInfo.playlistId,
+          playlistId: sourceId,
           playlistUrl: request.url,
-          playlistTitle: playlistInfo.title,
-          totalVideos: playlistInfo.videoIds.length,
+          playlistTitle: sourceTitle,
+          totalVideos: videoIds.length,
           processedVideos: allResults.length,
           successfulExtractions: successCount,
           failedExtractions: failureCount,

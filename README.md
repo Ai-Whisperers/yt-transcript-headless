@@ -32,7 +32,8 @@ This project provides a robust solution for extracting YouTube video transcripts
 
 ### Recent Updates
 
-**v0.7.0-beta (2025-12-04) - CLI & Persistent Playlists**
+**v0.7.0-beta (2025-12-04) - CLI, Persistent Playlists & Channel Extraction**
+- **Channel extraction:** YouTube channel support (@username, /channel/UC..., /c/..., /user/...) with automatic video discovery via infinite scroll. Extract transcripts from entire channels using the same playlist endpoint.
 - **Terminal workflow:** Shipping an interactive CLI (`npm run cli`) so devs can run single, playlist, or batch jobs plus health checks without the React dashboard. Supports custom `CLI_API_URL` targets and optional file export for JSON/SRT/TXT artifacts.
 - **Playlist persistence:** Playlist extractions now plug into the SQLite cache + job repository stack, unlocking cache hits, resumable progress tracking, and better observability around playlist workloads.
 - **RAG adapters:** Added OpenAI + ChromaDB provider adapters and tightened the semantic-search/chat use cases so the Retrieval-Augmented Generation stack stays vendor-agnostic and swappable.
@@ -117,6 +118,7 @@ This project provides a robust solution for extracting YouTube video transcripts
 - **Browser Pooling:** Reusable browser contexts for efficient batch operations
 - **Batch URL Processing:** Process multiple YouTube URLs in a single request
 - **Playlist Support:** Extract transcripts from entire YouTube playlists with parallel processing
+- **Channel Support:** Extract transcripts from entire YouTube channels (@username, /channel/UC..., /c/..., /user/...)
 - **Enhanced URL Validation:** Comprehensive YouTube URL format validation with detailed error messages
 - **Stealth Mode:** Anti-detection measures including user agent spoofing, plugin mocking, and randomized delays
 - **Advanced Error Handling:** Structured error responses with operational error classification
@@ -150,6 +152,7 @@ PROJECT/
 │   │   │   ├── TranscriptExtractor.ts     # Extraction with BrowserManager
 │   │   │   ├── PooledTranscriptExtractor.ts  # Extraction with BrowserPool
 │   │   │   ├── PlaylistExtractor.ts       # Playlist video ID extraction
+│   │   │   ├── ChannelExtractor.ts        # Channel video ID extraction
 │   │   │   ├── ProgressStream.ts          # SSE progress streaming
 │   │   │   ├── RequestQueue.ts            # Concurrency control
 │   │   │   ├── Logger.ts                  # Winston logging
@@ -302,12 +305,12 @@ Content-Type: application/json
 - `GET /api/health` - Health check endpoint with memory metrics
 - `GET /api/health/browser` - Browser health check (60s cache)
 - `GET /api/metrics` - Observability metrics (requests, errors, latencies, queue stats)
-- `POST /api/transcribe/playlist` - Playlist transcription (YouTube playlist URLs)
+- `POST /api/transcribe/playlist` - Playlist/Channel transcription (YouTube playlist or channel URLs)
 - `POST /api/transcribe/batch` - Batch URL transcription (array of video URLs)
 - `POST /api/transcribe/batch/stream` - Batch with SSE progress streaming
-- `POST /api/transcribe/playlist/stream` - Playlist with SSE progress streaming
+- `POST /api/transcribe/playlist/stream` - Playlist/Channel with SSE progress streaming
 - `GET /api/transcribe/batch/progress/:jobId` - SSE endpoint for batch progress
-- `GET /api/transcribe/playlist/progress/:jobId` - SSE endpoint for playlist progress
+- `GET /api/transcribe/playlist/progress/:jobId` - SSE endpoint for playlist/channel progress
 - `GET /api/formats` - Get supported transcript formats
 - `GET /api-docs` - Interactive Swagger UI documentation
 
@@ -363,6 +366,7 @@ Content-Type: application/json
 - `QUEUE_FULL` - Service at capacity (503)
 - `QUEUE_TIMEOUT` - Request timed out in queue (504)
 - `EMPTY_PLAYLIST` - Playlist contains no videos
+- `EMPTY_CHANNEL` - Channel contains no videos
 - `NO_VALID_URLS` - Batch contains no valid YouTube URLs
 
 ### Batch URL Endpoint
@@ -407,9 +411,63 @@ Content-Type: application/json
 }
 ```
 
+### Channel Extraction Endpoint
+
+Extract transcripts from all videos in a YouTube channel using the same `/api/transcribe/playlist` endpoint. The service automatically detects channel URLs and extracts all public videos.
+
+**Supported Channel URL Formats:**
+- `https://www.youtube.com/@username` - Channel handle (recommended)
+- `https://www.youtube.com/@username/videos` - Direct videos tab
+- `https://www.youtube.com/channel/UCxxxxx` - Channel ID format
+- `https://www.youtube.com/c/ChannelName` - Custom channel URL
+- `https://www.youtube.com/user/username` - Legacy user format
+
+**Request:**
+```json
+{
+  "url": "https://www.youtube.com/@code4AI",
+  "format": "json",
+  "maxVideos": 50
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "playlistId": "@code4AI",
+    "playlistUrl": "https://www.youtube.com/@code4AI",
+    "playlistTitle": "Code4AI Channel",
+    "totalVideos": 120,
+    "processedVideos": 50,
+    "successfulExtractions": 48,
+    "failedExtractions": 2,
+    "results": [
+      {
+        "videoId": "VIDEO_ID",
+        "videoUrl": "https://www.youtube.com/watch?v=VIDEO_ID",
+        "success": true,
+        "transcript": [...],
+        "extractedAt": "2025-12-04T12:00:00Z"
+      }
+    ],
+    "format": "json",
+    "extractedAt": "2025-12-04T12:00:00Z"
+  }
+}
+```
+
+**Notes:**
+- Channel videos are extracted in reverse chronological order (newest first)
+- Automatic infinite scroll to discover all videos
+- Same parallel processing and caching as playlists
+- Use `maxVideos` to limit the number of videos processed (default: 100)
+- Supports streaming progress via `/api/transcribe/playlist/stream`
+
 ### SSE Progress Streaming
 
-For long-running batch or playlist operations, use the streaming endpoints to receive real-time progress updates.
+For long-running batch, playlist, or channel operations, use the streaming endpoints to receive real-time progress updates.
 
 **Starting a Streaming Batch Request:**
 ```bash

@@ -1,5 +1,5 @@
 # YouTube Transcript Extractor - Project Standards
-Doc-Type: Project-Level Configuration · Version 1.2.0 · Updated 2025-12-03 · AI Whisperers
+Doc-Type: Project-Level Configuration · Version 1.3.0 · Updated 2025-12-04 · AI Whisperers
 
 ## Purpose & Scope
 
@@ -12,7 +12,7 @@ This manifest defines project-specific development standards for the YouTube Tra
 
 ## Project Overview
 
-**Mission:** Provide a reliable, headless YouTube transcript extraction service using browser automation with anti-detection stealth techniques.
+**Mission:** Provide a reliable, headless YouTube transcript extraction service using browser automation with anti-detection stealth techniques. Supports single videos, playlists, channels, and batch URLs.
 
 **Core Technology:**
 - Backend: Node.js 18+ with TypeScript, Express, Playwright
@@ -48,6 +48,7 @@ api/src/
     ├── TranscriptExtractor.ts   # Extraction with BrowserManager
     ├── PooledTranscriptExtractor.ts  # Extraction with BrowserPool
     ├── PlaylistExtractor.ts     # Playlist video ID extraction
+    ├── ChannelExtractor.ts      # Channel video ID extraction
     ├── ProgressStream.ts        # SSE progress streaming
     ├── RequestQueue.ts          # Concurrency control
     └── Logger.ts                # Winston logging
@@ -85,8 +86,10 @@ Each class serves exactly one purpose:
 - BrowserPool: Reusable browser context pool for batch operations
 - TranscriptExtractor: Transcript extraction with disposable browsers
 - PooledTranscriptExtractor: Transcript extraction with pooled contexts
+- PlaylistExtractor: Extract video IDs from YouTube playlists
+- ChannelExtractor: Extract video IDs from YouTube channels (with infinite scroll)
 - TranscribeVideoUseCase: Orchestrate single video extraction
-- TranscribePlaylistUseCase: Orchestrate playlist extraction (parallel)
+- TranscribePlaylistUseCase: Orchestrate playlist/channel extraction (parallel, unified endpoint)
 - BatchTranscribeUseCase: Orchestrate batch URL extraction (parallel)
 - ProgressStream: SSE connections for real-time progress updates
 - ProgressEmitter: Emit progress events from use cases
@@ -672,6 +675,7 @@ kubectl apply -f k8s/deployment.yaml
 
 | Date       | Version | Description                              |
 |:-----------|:--------|:-----------------------------------------|
+| 2025-12-04 | v1.3.0  | Added YouTube channel extraction support (ChannelExtractor with infinite scroll) |
 | 2025-12-03 | v1.2.0  | Added parallel processing for batch/playlist, SSE progress streaming |
 | 2025-12-03 | v1.1.0  | Added batch URL endpoint, browser pooling architecture |
 | 2025-11-15 | v1.0.0  | Initial project standards documentation  |

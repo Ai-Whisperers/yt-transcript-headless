@@ -7,6 +7,7 @@ import { RAGChatUseCase } from '../application/RAGChatUseCase';
 import { AutoEmbedTranscriptUseCase } from '../application/AutoEmbedTranscriptUseCase';
 import { TranscriptExtractor } from './TranscriptExtractor';
 import { PlaylistExtractor } from './PlaylistExtractor';
+import { ChannelExtractor } from './ChannelExtractor';
 import { PooledTranscriptExtractor } from './PooledTranscriptExtractor';
 import { BrowserManager } from './BrowserManager';
 import { BrowserPool, getSharedBrowserPool, shutdownSharedPool } from './BrowserPool';
@@ -152,10 +153,12 @@ export function createRouter(): RouterContext {
     jobRepository
   );
 
-  // Playlist now uses pooled extractor for parallel processing
+  // Playlist and Channel extractors - both use pooled extractor for parallel processing
   const playlistExtractor = new PlaylistExtractor(browserManager, playlistLogger);
+  const channelExtractor = new ChannelExtractor(browserManager, playlistLogger);
   const transcribePlaylistUseCase = new TranscribePlaylistUseCase(
     playlistExtractor,
+    channelExtractor,
     pooledExtractor,
     playlistLogger,
     cacheRepository,
