@@ -12,6 +12,7 @@ import { BrowserManager } from './BrowserManager';
 import { BrowserPool, getSharedBrowserPool, shutdownSharedPool } from './BrowserPool';
 import { ProgressStream, ProgressEmitter, getSharedProgressStream } from './ProgressStream';
 import { RepositoryFactory } from './database/RepositoryFactory';
+import { CacheEvictionService } from './database/CacheEvictionService';
 import { RAGServiceFactory } from './RAGServiceFactory';
 import { Logger } from './Logger';
 import { TranscriptRequest, TranscriptFormat } from '../domain/TranscriptSegment';
@@ -33,6 +34,7 @@ export interface RouterContext {
   browserPool: BrowserPool;
   progressStream: ProgressStream;
   repositoryFactory?: RepositoryFactory;
+  cacheEvictionService?: CacheEvictionService;
 }
 
 export function createRouter(): RouterContext {
@@ -59,6 +61,7 @@ export function createRouter(): RouterContext {
   let repositoryFactory: RepositoryFactory | undefined;
   let cacheRepository: ReturnType<RepositoryFactory['getCacheRepository']> | undefined = undefined;
   let jobRepository: ReturnType<RepositoryFactory['getJobRepository']> | undefined = undefined;
+  let cacheEvictionService: CacheEvictionService | undefined = undefined;
 
   if (enablePersistence) {
     try {
@@ -70,6 +73,19 @@ export function createRouter(): RouterContext {
         cacheEnabled: !!cacheRepository,
         jobTrackingEnabled: !!jobRepository
       });
+
+      // Initialize cache eviction service
+      if (cacheRepository) {
+        const evictionLogger = new Logger('cache-eviction');
+        cacheEvictionService = new CacheEvictionService(
+          cacheRepository,
+          evictionLogger
+        );
+        cacheEvictionService.start();
+        logger.info('Cache eviction service started', {
+          config: cacheEvictionService.getConfig()
+        });
+      }
     } catch (error: any) {
       logger.error('Failed to initialize persistence layer', error);
       logger.warn('Continuing without persistence - caching and job tracking disabled');
@@ -610,6 +626,56 @@ export function createRouter(): RouterContext {
         correlationId: req.correlationId
       });
       throw error;
+    }
+  }));
+
+  // Trigger automatic cache eviction with configured policies
+  router.post('/cache/evict/auto', asyncHandler(async (req: Request, res: Response) => {
+    const logger = req.logger || new Logger('cache-evict-auto');
+
+    if (!cacheEvictionService) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          message: 'Cache eviction service not enabled',
+          code: 'EVICTION_SERVICE_DISABLED',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
+    }
+
+    try {
+      const result = await cacheEvictionService.runEviction();
+
+      logger.info('Automatic cache eviction completed', {
+        ...result,
+        correlationId: req.correlationId
+      });
+
+      res.json({
+        success: true,
+        data: {
+          message: `Automatic eviction completed: ${result.evictedCount} entries removed`,
+          config: cacheEvictionService.getConfig(),
+          result,
+          correlationId: req.correlationId
+        }
+      });
+    } catch (error: any) {
+      logger.error('Automatic cache eviction failed', error, {
+        correlationId: req.correlationId
+      });
+
+      res.status(500).json({
+        success: false,
+        error: {
+          message: `Automatic cache eviction failed: ${error.message}`,
+          code: 'EVICTION_FAILED',
+          timestamp: new Date().toISOString(),
+          correlationId: req.correlationId
+        }
+      });
     }
   }));
 
@@ -1254,11 +1320,10 @@ export function createRouter(): RouterContext {
   // Cleanup on shutdown
   process.on('SIGTERM', async () => {
     logger.info('SIGTERM received - graceful shutdown initiated');
-    await shutdownSharedPool();
-  });
-
-  process.on('SIGINT', async () => {
-    logger.info('SIGINT received - graceful shutdown initiated');
+    if (cacheEvictionService) {
+      logger.info('Stopping cache eviction service');
+      cacheEvictionService.stop();
+    }
     await shutdownSharedPool();
     if (repositoryFactory) {
       logger.info('Closing database connections');
@@ -1266,5 +1331,18 @@ export function createRouter(): RouterContext {
     }
   });
 
-  return { router, requestQueue, browserPool, progressStream, repositoryFactory };
+  process.on('SIGINT', async () => {
+    logger.info('SIGINT received - graceful shutdown initiated');
+    if (cacheEvictionService) {
+      logger.info('Stopping cache eviction service');
+      cacheEvictionService.stop();
+    }
+    await shutdownSharedPool();
+    if (repositoryFactory) {
+      logger.info('Closing database connections');
+      repositoryFactory.close();
+    }
+  });
+
+  return { router, requestQueue, browserPool, progressStream, repositoryFactory, cacheEvictionService };
 }
