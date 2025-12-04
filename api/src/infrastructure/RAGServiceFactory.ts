@@ -21,8 +21,11 @@ import { IEmbeddingService } from '../domain/repositories/IEmbeddingService';
 import { ILLMService } from '../domain/repositories/ILLMService';
 import { IVectorStore, VectorStoreConfig } from '../domain/repositories/IVectorStore';
 import { LocalEmbeddingService } from './embedding/LocalEmbeddingService';
+import { OpenAIEmbeddingService } from './embedding/OpenAIEmbeddingService';
 import { LlamaCppLLMService } from './llm/LlamaCppLLMService';
+import { OpenAILLMService } from './llm/OpenAILLMService';
 import { QdrantVectorStore } from './vectorstore/QdrantVectorStore';
+import { ChromaVectorStore } from './vectorstore/ChromaVectorStore';
 import { Logger } from './Logger';
 
 export class RAGServiceFactory {
@@ -87,8 +90,12 @@ export class RAGServiceFactory {
           break;
 
         case 'openai':
-          // Future: Implement OpenAIEmbeddingService
-          throw new Error('OpenAI embedding provider not yet implemented. Use EMBEDDING_PROVIDER=local');
+          this.embeddingService = new OpenAIEmbeddingService({
+            provider: 'openai',
+            modelName: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
+            apiKey: process.env.OPENAI_API_KEY
+          }, this.logger);
+          break;
 
         default:
           throw new Error(`Unknown embedding provider: ${provider}`);
@@ -127,8 +134,12 @@ export class RAGServiceFactory {
           break;
 
         case 'openai':
-          // Future: Implement OpenAILLMService
-          throw new Error('OpenAI LLM provider not yet implemented. Use LLM_PROVIDER=llama.cpp');
+          this.llmService = new OpenAILLMService({
+            provider: 'openai',
+            modelName: process.env.LLM_MODEL || 'gpt-4o-mini',
+            apiKey: process.env.OPENAI_API_KEY
+          }, this.logger);
+          break;
 
         default:
           throw new Error(`Unknown LLM provider: ${provider}`);
@@ -175,8 +186,16 @@ export class RAGServiceFactory {
           break;
 
         case 'chroma':
-          // Future: Implement ChromaVectorStore
-          throw new Error('Chroma vector store provider not yet implemented. Use VECTOR_STORE_PROVIDER=qdrant');
+          const chromaConfig: VectorStoreConfig = {
+            provider: 'chroma',
+            url: process.env.CHROMA_URL || 'http://localhost:8000',
+            collectionName: process.env.VECTOR_COLLECTION_NAME || 'transcripts',
+            dimensions,
+            createCollectionIfMissing: true
+          };
+
+          this.vectorStore = new ChromaVectorStore(chromaConfig, this.logger);
+          break;
 
         default:
           throw new Error(`Unknown vector store provider: ${provider}`);
